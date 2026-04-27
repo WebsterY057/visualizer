@@ -5,100 +5,117 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>跨所可视化分析平台</title>
 <style>
+  /* ============================================================
+     天蓝色 + 灰色 专业主题
+     主色: #4FA8D7 (天蓝色), 辅色: #8A8A8A (灰色)
+     ============================================================ */
+  :root {
+    --sky:       #4FA8D7;
+    --sky-light: #7EC4E8;
+    --sky-dark:  #3A8AB8;
+    --gray-1:    #2A2A2E;
+    --gray-2:    #353538;
+    --gray-3:    #404044;
+    --gray-4:    #888888;
+    --gray-5:    #BBBBBB;
+    --bg:        #1E1E22;
+    --pos:       #4CAF82;
+    --neg:       #E05C5C;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a1e; color: #d1d5db; min-height: 100vh; }
-  .header { background: #252529; border-bottom: 1px solid #3a3d42; padding: 16px 32px; display: flex; align-items: center; gap: 24px; }
-  .header h1 { font-size: 18px; font-weight: 600; color: #5DADE2; }
-  .header .subtitle { font-size: 12px; color: #888; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--gray-5); min-height: 100vh; }
+  .header { background: var(--gray-1); border-bottom: 1px solid var(--gray-3); padding: 16px 32px; display: flex; align-items: center; gap: 24px; }
+  .header h1 { font-size: 18px; font-weight: 600; color: var(--sky); }
+  .header .subtitle { font-size: 12px; color: var(--gray-4); }
   .main { display: flex; min-height: calc(100vh - 60px); }
 
   /* 左侧控制面板 */
-  .sidebar { width: 320px; background: #252529; border-right: 1px solid #3a3d42; padding: 20px; overflow-y: auto; flex-shrink: 0; }
+  .sidebar { width: 320px; background: var(--gray-1); border-right: 1px solid var(--gray-3); padding: 20px; overflow-y: auto; flex-shrink: 0; }
   .panel-section { margin-bottom: 24px; }
-  .panel-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 10px; font-weight: 600; }
+  .panel-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--gray-4); margin-bottom: 10px; font-weight: 600; }
 
   /* 选择器样式 */
   .ctrl-group { margin-bottom: 12px; }
-  .ctrl-label { font-size: 12px; color: #999; margin-bottom: 4px; display: block; }
-  select, input[type="text"], input[type="date"] { width: 100%; background: #2f3136; border: 1px solid #3a3d42; border-radius: 6px; color: #d1d5db; padding: 8px 10px; font-size: 13px; outline: none; transition: border-color 0.2s; }
-  select:focus, input:focus { border-color: #5DADE2; }
+  .ctrl-label { font-size: 12px; color: var(--gray-4); margin-bottom: 4px; display: block; }
+  select, input[type="text"], input[type="date"] { width: 100%; background: var(--gray-2); border: 1px solid var(--gray-3); border-radius: 6px; color: var(--gray-5); padding: 8px 10px; font-size: 13px; outline: none; transition: border-color 0.2s; }
+  select:focus, input:focus { border-color: var(--sky); }
   select[multiple] { height: 120px; }
 
   /* 图表类型按钮 */
   .chart-types { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .chart-type-btn { background: #2f3136; border: 1px solid #3a3d42; border-radius: 6px; padding: 8px 4px; text-align: center; font-size: 11px; cursor: pointer; transition: all 0.2s; color: #999; }
-  .chart-type-btn:hover { border-color: #5DADE2; color: #5DADE2; }
-  .chart-type-btn.active { background: #5DADE2; border-color: #5DADE2; color: #1a1a1e; font-weight: 600; }
+  .chart-type-btn { background: var(--gray-2); border: 1px solid var(--gray-3); border-radius: 6px; padding: 8px 4px; text-align: center; font-size: 11px; cursor: pointer; transition: all 0.2s; color: var(--gray-4); }
+  .chart-type-btn:hover { border-color: var(--sky); color: var(--sky); }
+  .chart-type-btn.active { background: var(--sky); border-color: var(--sky); color: var(--bg); font-weight: 600; }
 
   /* 快捷卡片 */
   .quick-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .quick-card { background: #2f3136; border: 1px solid #3a3d42; border-radius: 6px; padding: 10px 8px; cursor: pointer; transition: all 0.2s; font-size: 12px; }
-  .quick-card:hover { border-color: #5DADE2; }
-  .quick-card.active { border-color: #5DADE2; background: #35373d; }
-  .quick-card .qc-title { color: #5DADE2; font-weight: 600; font-size: 11px; }
-  .quick-card .qc-desc { color: #666; font-size: 10px; margin-top: 2px; }
+  .quick-card { background: var(--gray-2); border: 1px solid var(--gray-3); border-radius: 6px; padding: 10px 8px; cursor: pointer; transition: all 0.2s; font-size: 12px; }
+  .quick-card:hover { border-color: var(--sky); }
+  .quick-card.active { border-color: var(--sky); background: var(--gray-3); }
+  .quick-card .qc-title { color: var(--sky); font-weight: 600; font-size: 11px; }
+  .quick-card .qc-desc { color: var(--gray-4); font-size: 10px; margin-top: 2px; }
 
   /* 主图表区域 */
   .content { flex: 1; padding: 20px; overflow: auto; }
-  .chart-container { background: #252529; border-radius: 8px; border: 1px solid #3a3d42; padding: 20px; margin-bottom: 16px; }
+  .chart-container { background: var(--gray-1); border-radius: 8px; border: 1px solid var(--gray-3); padding: 20px; margin-bottom: 16px; }
   .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-  .chart-title { font-size: 14px; font-weight: 600; color: #5DADE2; }
-  .chart-meta { font-size: 11px; color: #888; }
+  .chart-title { font-size: 14px; font-weight: 600; color: var(--sky); }
+  .chart-meta { font-size: 11px; color: var(--gray-4); }
 
   canvas { width: 100% !important; }
 
   /* 数据表格 */
   .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .data-table th { background: #2f3136; color: #5DADE2; padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 1px solid #3a3d42; position: sticky; top: 0; }
-  .data-table td { padding: 7px 12px; border-bottom: 1px solid #2f3136; color: #ccc; }
-  .data-table tr:hover td { background: #2f3136; }
+  .data-table th { background: var(--gray-2); color: var(--sky); padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--gray-3); position: sticky; top: 0; }
+  .data-table td { padding: 7px 12px; border-bottom: 1px solid var(--gray-2); color: var(--gray-5); }
+  .data-table tr:hover td { background: var(--gray-2); }
   .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .data-table .pos { color: #4ade80; }
-  .data-table .neg { color: #f87171; }
+  .data-table .pos { color: var(--pos); }
+  .data-table .neg { color: var(--neg); }
 
   /* 按钮 */
-  .btn { background: #5DADE2; color: #1a1a1e; border: none; border-radius: 6px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-  .btn:hover { background: #7fc4e8; }
-  .btn-secondary { background: #2f3136; color: #d1d5db; border: 1px solid #3a3d42; }
-  .btn-secondary:hover { border-color: #5DADE2; color: #5DADE2; }
+  .btn { background: var(--sky); color: var(--bg); border: none; border-radius: 6px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn:hover { background: var(--sky-light); }
+  .btn-secondary { background: var(--gray-2); color: var(--gray-5); border: 1px solid var(--gray-3); }
+  .btn-secondary:hover { border-color: var(--sky); color: var(--sky); }
 
   .btn-row { display: flex; gap: 8px; margin-top: 12px; }
 
   /* 筛选标签 */
   .filter-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  .filter-tag { background: #2f3136; border: 1px solid #3a3d42; border-radius: 4px; padding: 3px 8px; font-size: 11px; color: #999; display: flex; align-items: center; gap: 4px; }
-  .filter-tag span { color: #5DADE2; }
-  .filter-tag button { background: none; border: none; color: #666; cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
-  .filter-tag button:hover { color: #f87171; }
+  .filter-tag { background: var(--gray-2); border: 1px solid var(--gray-3); border-radius: 4px; padding: 3px 8px; font-size: 11px; color: var(--gray-4); display: flex; align-items: center; gap: 4px; }
+  .filter-tag span { color: var(--sky); }
+  .filter-tag button { background: none; border: none; color: var(--gray-4); cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
+  .filter-tag button:hover { color: var(--neg); }
 
   /* 加载状态 */
-  .loading { text-align: center; padding: 40px; color: #666; }
+  .loading { text-align: center; padding: 40px; color: var(--gray-4); }
   .loading::after { content: '...'; animation: dots 1.5s infinite; }
   @keyframes dots { 0%,20%{content:'.'} 40%{content:'..'} 60%,100%{content:'...'} }
 
   /* 错误提示 */
-  .error-msg { background: #2a1a1a; border: 1px solid #f87171; border-radius: 6px; padding: 12px; color: #f87171; font-size: 13px; margin-top: 12px; }
+  .error-msg { background: #2A1A1A; border: 1px solid var(--neg); border-radius: 6px; padding: 12px; color: var(--neg); font-size: 13px; margin-top: 12px; }
 
   /* 无数据 */
-  .no-data { text-align: center; padding: 40px; color: #555; font-size: 13px; }
+  .no-data { text-align: center; padding: 40px; color: var(--gray-4); font-size: 13px; }
 
   /* 分隔线 */
-  .divider { border: none; border-top: 1px solid #3a3d42; margin: 16px 0; }
+  .divider { border: none; border-top: 1px solid var(--gray-3); margin: 16px 0; }
 
   /* 统计卡片 */
   .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-  .stat-card { background: #252529; border: 1px solid #3a3d42; border-radius: 8px; padding: 14px 16px; }
-  .stat-card .sc-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .stat-card { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 14px 16px; }
+  .stat-card .sc-label { font-size: 11px; color: var(--gray-4); margin-bottom: 4px; }
   .stat-card .sc-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .stat-card .sc-value.pos { color: #4ade80; }
-  .stat-card .sc-value.neg { color: #f87171; }
-  .stat-card .sc-value.neu { color: #d1d5db; }
+  .stat-card .sc-value.pos { color: var(--pos); }
+  .stat-card .sc-value.neg { color: var(--neg); }
+  .stat-card .sc-value.neu { color: var(--gray-5); }
 
   /* 复选框组 */
-  .checkbox-group { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; background: #2f3136; border-radius: 6px; padding: 8px; }
-  .checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #ccc; cursor: pointer; }
-  .checkbox-item input { accent-color: #5DADE2; }
-  .checkbox-item:hover { color: #5DADE2; }
+  .checkbox-group { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; background: var(--gray-2); border-radius: 6px; padding: 8px; }
+  .checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--gray-5); cursor: pointer; }
+  .checkbox-item input { accent-color: var(--sky); }
+  .checkbox-item:hover { color: var(--sky); }
 </style>
 </head>
 <body>
@@ -182,7 +199,7 @@
         <div class="chart-type-btn active" onclick="setChartType('line', this)">折线图</div>
         <div class="chart-type-btn" onclick="setChartType('bar', this)">柱状图</div>
         <div class="chart-type-btn" onclick="setChartType('pie', this)">饼图</div>
-        <div class="chart-type-btn" onclick="setChartType('doughnut', this)">环形图</div>
+        <div class="chart-type-btn" onclick="setChartType('heatmap', this)">热力图</div>
         <div class="chart-type-btn" onclick="setChartType('scatter', this)">散点图</div>
         <div class="chart-type-btn" onclick="setChartType('radar', this)">雷达图</div>
       </div>
@@ -202,21 +219,15 @@
   <!-- ========== 右侧内容区 ========== -->
   <div class="content">
     <div class="stat-cards" id="statCards" style="display:none;"></div>
-    
-    <!-- 图表区域 -->
-    <div class="chart-container" id="chartContainer" style="display:none;">
-      <div class="chart-header">
-        <div class="chart-title" id="chartTitle">图表</div>
-        <div class="chart-meta" id="chartMeta"></div>
-      </div>
-      <canvas id="mainChart"></canvas>
-    </div>
-    
+
     <!-- 数据表格 -->
     <div class="chart-container" id="tableContainer" style="display:none;">
       <div class="chart-header">
         <div class="chart-title">数据明细</div>
-        <button class="btn-secondary" style="padding:5px 12px; font-size:11px;" onclick="exportCSV()">导出 CSV</button>
+        <div style="display:flex; gap:6px;">
+          <button class="btn-secondary" style="padding:5px 12px; font-size:11px;" onclick="showTable(); renderCurrentChart();">明细表</button>
+          <button class="btn-secondary" style="padding:5px 12px; font-size:11px;" onclick="exportCSV()">导出 CSV</button>
+        </div>
       </div>
       <div style="max-height: 500px; overflow: auto;">
         <table class="data-table" id="dataTable">
@@ -225,7 +236,16 @@
         </table>
       </div>
     </div>
-    
+
+    <!-- 图表区域 -->
+    <div class="chart-container" id="chartContainer" style="display:none;">
+      <div class="chart-header">
+        <div class="chart-title" id="chartTitle">图表</div>
+        <div class="chart-meta" id="chartMeta"></div>
+      </div>
+      <canvas id="mainChart"></canvas>
+    </div>
+
     <div class="no-data" id="noData">
       ← 请从左侧选择数据表和字段，然后点击「生成图表」
     </div>
@@ -304,6 +324,9 @@ async function onTableChange() {
   const tableSel = document.getElementById('tableSelect');
   selectedTables = Array.from(tableSel.selectedOptions).map(o => o.value).filter(v => v);
   currentTable = selectedTables[0] || '';
+  tableFilters = {};
+  tableSortCol = null;
+  tableSortDir = 'asc';
 
   renderSelectedTables();
 
@@ -342,26 +365,51 @@ async function onTableChange() {
   yFieldsOptions = [];
   const defaultFields = ['alpha', 'pnl', 'theo', 'bundle', 'gas', 'order_count', 'theoretical_profit', '实际利润', 'bundle_fee', 'gas_fee', 'bnb_pnl', 'spread_range', 'size_range', 'token'];
 
-  Array.from(allColumns.values()).forEach(c => {
-    if (excludeNames.includes(c.name)) return;
-    yFieldsOptions.push(c);
-    const div = document.createElement('div');
-    div.className = 'checkbox-item';
-    const isInDefault = defaultFields.some(f => c.name.includes(f) || f.includes(c.name));
-    const isSelected = selectedFields.includes(c.name);
-    const checked = (isInDefault || isSelected) ? 'checked' : '';
-    const tableCount = selectedTables.filter(t => meta[t]?.columns.some(col => col.name === c.name)).length;
-    const tableHint = selectedTables.length > 1 ? ` (${tableCount}表)` : '';
-    div.innerHTML = `<input type="checkbox" id="yf_${c.name}" value="${c.name}" ${checked} onclick="onYFieldChange()">
-                     <label for="yf_${c.name}">${c.name}${tableHint}</label>`;
-    yGroup.appendChild(div);
-  });
+  const fieldTableMap = {};
+  if (selectedTables.length > 1) {
+    selectedTables.forEach(t => {
+      if (meta[t]?.columns) {
+        meta[t].columns.forEach(c => {
+          if (excludeNames.includes(c.name)) return;
+          const fullName = `${t.replace('汇总', '').replace('大币', '')}_${c.name}`;
+          if (!fieldTableMap[c.name]) fieldTableMap[c.name] = [];
+          fieldTableMap[c.name].push({ fullName, table: t, col: c });
+        });
+      }
+    });
+    Object.keys(fieldTableMap).forEach(baseName => {
+      const entries = fieldTableMap[baseName];
+      entries.forEach(entry => {
+        const div = document.createElement('div');
+        div.className = 'checkbox-item';
+        const isSelected = selectedFields.includes(entry.fullName);
+        const checked = isSelected ? 'checked' : '';
+        div.innerHTML = `<input type="checkbox" id="yf_${entry.fullName}" value="${entry.fullName}" ${checked} onclick="onYFieldChange()">
+                         <label for="yf_${entry.fullName}">${entry.fullName}</label>`;
+        yGroup.appendChild(div);
+      });
+    });
+  } else {
+    Array.from(allColumns.values()).forEach(c => {
+      if (excludeNames.includes(c.name)) return;
+      yFieldsOptions.push(c);
+      const div = document.createElement('div');
+      div.className = 'checkbox-item';
+      const isInDefault = defaultFields.some(f => c.name.includes(f) || f.includes(c.name));
+      const isSelected = selectedFields.includes(c.name);
+      const checked = (isInDefault || isSelected) ? 'checked' : '';
+      div.innerHTML = `<input type="checkbox" id="yf_${c.name}" value="${c.name}" ${checked} onclick="onYFieldChange()">
+                       <label for="yf_${c.name}">${c.name}</label>`;
+      yGroup.appendChild(div);
+    });
+  }
 
   // 设置日期范围
   if (dateInfo[0]) document.getElementById('dateFrom').value = dateInfo[0];
   if (dateInfo[1]) document.getElementById('dateTo').value = dateInfo[1];
 
   onYFieldChange();
+  renderChart();
 }
 
 function renderSelectedTables() {
@@ -425,18 +473,39 @@ function filterYFields() {
   const yGroup = document.getElementById('yFieldGroup');
   yGroup.innerHTML = '';
   const excludeNames = ['id', 'created_at', 'date', '日期'];
-  yFieldsOptions.forEach(c => {
-    if (excludeNames.includes(c.name)) return;
-    if (c.name.toLowerCase().includes(search)) {
-      const div = document.createElement('div');
-      div.className = 'checkbox-item';
-      const isSelected = selectedFields.includes(c.name);
-      const checked = isSelected ? 'checked' : '';
-      div.innerHTML = `<input type="checkbox" id="yf_${c.name}" value="${c.name}" ${checked} onclick="onYFieldChange()">
-                       <label for="yf_${c.name}">${c.name} (${c.type})</label>`;
-      yGroup.appendChild(div);
-    }
-  });
+
+  if (selectedTables.length > 1) {
+    selectedTables.forEach(t => {
+      if (meta[t]?.columns) {
+        meta[t].columns.forEach(c => {
+          if (excludeNames.includes(c.name)) return;
+          const fullName = `${c.name}_${t.replace('汇总', '').replace('大币', '')}`;
+          if (fullName.toLowerCase().includes(search) || c.name.toLowerCase().includes(search)) {
+            const div = document.createElement('div');
+            div.className = 'checkbox-item';
+            const isSelected = selectedFields.includes(fullName);
+            const checked = isSelected ? 'checked' : '';
+            div.innerHTML = `<input type="checkbox" id="yf_${fullName}" value="${fullName}" ${checked} onclick="onYFieldChange()">
+                             <label for="yf_${fullName}">${fullName}</label>`;
+            yGroup.appendChild(div);
+          }
+        });
+      }
+    });
+  } else {
+    yFieldsOptions.forEach(c => {
+      if (excludeNames.includes(c.name)) return;
+      if (c.name.toLowerCase().includes(search)) {
+        const div = document.createElement('div');
+        div.className = 'checkbox-item';
+        const isSelected = selectedFields.includes(c.name);
+        const checked = isSelected ? 'checked' : '';
+        div.innerHTML = `<input type="checkbox" id="yf_${c.name}" value="${c.name}" ${checked} onclick="onYFieldChange()">
+                         <label for="yf_${c.name}">${c.name}</label>`;
+        yGroup.appendChild(div);
+      }
+    });
+  }
 }
 
 function onYFieldChange() {
@@ -491,7 +560,6 @@ async function renderChart() {
   document.getElementById('errorBox').innerHTML = '';
   document.getElementById('noData').style.display = 'none';
   document.getElementById('chartContainer').style.display = 'none';
-  document.getElementById('tableContainer').style.display = 'none';
 
   if (!table) { showError('请先选择数据表'); return; }
   if (yFields.length === 0) { showError('请至少选择一个字段'); return; }
@@ -510,7 +578,6 @@ async function renderChart() {
     currentData = result.data;
     tableColumns = result.data.length > 0 ? Object.keys(result.data[0]) : [xField, ...yFields];
 
-    updateStatCards(result.data, yFields);
     renderCurrentChart();
 
     document.getElementById('chartContainer').style.display = 'block';
@@ -519,6 +586,33 @@ async function renderChart() {
     document.getElementById('errorBox').innerHTML = '';
 
   } catch(e) { showError(e.message); console.error('renderChart error:', e); }
+}
+
+function getFilteredAggregatedData(yFields, xField) {
+  let chartData = currentData;
+  const hasActiveFilters = Object.values(tableFilters).some(v => v);
+  if (hasActiveFilters) {
+    const filtered = currentData.filter(row => {
+      return Object.entries(tableFilters).every(([col, filterVal]) => {
+        if (!filterVal) return true;
+        return String(row[col]) === filterVal;
+      });
+    });
+    const aggregated = {};
+    filtered.forEach(r => {
+      const key = r[xField];
+      if (!aggregated[key]) {
+        aggregated[key] = { [xField]: key };
+        yFields.forEach(f => aggregated[key][f] = 0);
+      }
+      yFields.forEach(f => {
+        const val = parseFloat(r[f]) || 0;
+        aggregated[key][f] += val;
+      });
+    });
+    chartData = Object.values(aggregated);
+  }
+  return chartData;
 }
 
 function renderCurrentChart() {
@@ -535,15 +629,39 @@ function renderCurrentChart() {
     }
   }
 
-  const labels = currentData.map(r => String(r[xField]).substring(0, 20));
-  
-  const datasets = yFields.map((field, i) => {
-    const colors = ['#5DADE2','#4ade80','#a78bfa','#f87171','#38bdf8','#fb923c'];
+  const chartData = getFilteredAggregatedData(yFields, xField);
+  updateStatCards(chartData, yFields);
+
+  const labels = chartData.map(r => String(r[xField]).substring(0, 10));
+
+  // 多色系图表配色（区分度高）
+  const chartColors = [
+    '#5DADE2', '#4ADE80', '#F87171', '#FBBF24',
+    '#A78BFA', '#34D399', '#FB923C', '#E879F9',
+    '#38BDF8', '#F472B6', '#6EE7B7', '#FCD34D',
+    '#C084FC', '#22D3EE', '#F97316', '#E879F9'
+  ];
+  const datasets = yFields.map((col, i) => {
+    const color = chartColors[i % chartColors.length];
+    if (chartType === 'scatter') {
+      return {
+        label: col,
+        data: chartData.map(r => ({
+          x: r[xField],
+          y: r[col] !== null && r[col] !== undefined ? parseFloat(r[col]) : 0
+        })),
+        borderColor: color,
+        backgroundColor: color + 'cc',
+      };
+    }
     return {
-      label: field,
-      data: currentData.map(r => r[field] !== null ? parseFloat(r[field]) : 0),
-      borderColor: colors[i % colors.length],
-      backgroundColor: chartType === 'line' ? 'transparent' : colors[i % colors.length] + 'cc',
+      label: col,
+      data: chartData.map(r => {
+        const val = r[col];
+        return val !== null && val !== undefined ? parseFloat(val) : 0;
+      }),
+      borderColor: color,
+      backgroundColor: chartType === 'line' ? 'transparent' : color + 'aa',
       borderWidth: 2,
       tension: 0.3,
       pointRadius: chartType === 'line' ? 3 : 0,
@@ -558,18 +676,21 @@ function renderCurrentChart() {
     options: {
       responsive: true,
       maintainAspectRatio: true,
-      aspectRatio: chartType === 'pie' || chartType === 'doughnut' ? 1.5 : 2.5,
+      aspectRatio: chartType === 'pie' || chartType === 'heatmap' ? 1.5 : 2.5,
       plugins: {
-        legend: { labels: { color: '#aaa', font: { size: 12 } } },
+        legend: { labels: { color: '#888888', font: { size: 12 } } },
         tooltip: {
           callbacks: {
             label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.raw)}`
           }
         }
       },
-      scales: chartType === 'pie' || chartType === 'doughnut' || chartType === 'radar' ? {} : {
-        x: { ticks: { color: '#888', maxRotation: 45 }, grid: { color: '#2a2d3a' } },
-        y: { ticks: { color: '#888', callback: v => fmtNum(v) }, grid: { color: '#2a2d3a' } }
+      scales: chartType === 'pie' || chartType === 'heatmap' || chartType === 'radar' ? {} : chartType === 'scatter' ? {
+        x: { type: 'linear', ticks: { color: '#888888' }, grid: { color: '#353538' } },
+        y: { ticks: { color: '#888888', callback: v => fmtNum(v) }, grid: { color: '#353538' } }
+      } : {
+        x: { ticks: { color: '#888888', maxRotation: 45 }, grid: { color: '#353538' } },
+        y: { ticks: { color: '#888888', callback: v => fmtNum(v) }, grid: { color: '#353538' } }
       }
     }
   });
@@ -582,17 +703,17 @@ function updateStatCards(data, yFields) {
   yFields.slice(0, 4).forEach(field => {
     const values = data.map(r => parseFloat(r[field]) || 0).filter(v => !isNaN(v));
     const sum = values.reduce((a, b) => a + b, 0);
-    const avg = values.length ? sum / values.length : 0;
-    const max = values.length ? Math.max(...values) : 0;
-    const min = values.length ? Math.min(...values) : 0;
     const sumClass = sum >= 0 ? 'pos' : 'neg';
     html += `<div class="stat-card"><div class="sc-label">${field} 合计</div><div class="sc-value ${sumClass}">${fmtNum(sum)}</div></div>`;
-    html += `<div class="stat-card"><div class="sc-label">${field} 均值</div><div class="sc-value neu">${fmtNum(avg)}</div></div>`;
   });
   html += `<div class="stat-card"><div class="sc-label">记录数</div><div class="sc-value neu">${data.length.toLocaleString()}</div></div>`;
 
   document.getElementById('statCards').innerHTML = html;
 }
+
+let tableSortCol = null;
+let tableSortDir = 'asc';
+let tableFilters = {};
 
 async function showTable() {
   const tableSel = document.getElementById('tableSelect');
@@ -600,9 +721,8 @@ async function showTable() {
   if (!table) { showError('请先选择数据表'); return; }
   if (currentData.length === 0) { await renderChart(); }
   if (currentData.length === 0) return;
-  
+
   document.getElementById('tableContainer').style.display = 'block';
-  document.getElementById('chartContainer').style.display = 'none';
 
   const dateCols = ['date', '日期', 'Date', 'DATE'];
   const orderedCols = [...tableColumns].sort((a, b) => {
@@ -611,12 +731,62 @@ async function showTable() {
     return 0;
   });
 
+  const filterOptions = {};
+  orderedCols.forEach(col => {
+    const vals = [...new Set(currentData.map(r => r[col] !== null && r[col] !== undefined ? String(r[col]) : ''))];
+    vals.sort();
+    filterOptions[col] = vals;
+  });
+
+  orderedCols.forEach(col => {
+    if (!(col in tableFilters)) tableFilters[col] = '';
+  });
+
+  let filteredData = currentData.filter(row => {
+    return orderedCols.every(col => {
+      const filterVal = tableFilters[col];
+      if (!filterVal) return true;
+      return String(row[col]) === filterVal;
+    });
+  });
+
+  if (tableSortCol && orderedCols.includes(tableSortCol)) {
+    filteredData.sort((a, b) => {
+      let va = a[tableSortCol], vb = b[tableSortCol];
+      const isNum = typeof va === 'number' && typeof vb === 'number';
+      if (isNum) {
+        return tableSortDir === 'asc' ? va - vb : vb - va;
+      }
+      va = String(va || ''), vb = String(vb || '');
+      return tableSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+  }
+
   const thead = document.getElementById('tableHead');
-  thead.innerHTML = '<tr>' + orderedCols.map(c => `<th>${c}</th>`).join('') + '</tr>';
-  
+  thead.innerHTML = '<tr>' + orderedCols.map(col => {
+    const sortIcon = tableSortCol === col ? (tableSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    return `<th onclick="toggleSort('${col}')" style="cursor:pointer; user-select:none;">${col}${sortIcon}</th>`;
+  }).join('') + '</tr>';
+
+  const filterRow = document.createElement('tr');
+  filterRow.style.background = '#2A2A2E';
+  orderedCols.forEach(col => {
+    const sel = document.createElement('select');
+    sel.style.width = '100%';
+    sel.style.fontSize = '11px';
+    sel.onchange = () => { tableFilters[col] = sel.value; showTable(); renderCurrentChart(); };
+    sel.innerHTML = '<option value="">--全部--</option>' +
+      filterOptions[col].map(v => `<option value="${v.replace(/"/g, '&quot;')}" ${tableFilters[col] === v ? 'selected' : ''}>${v.substring(0, 20)}</option>`).join('');
+    const td = document.createElement('td');
+    td.style.padding = '2px';
+    td.appendChild(sel);
+    filterRow.appendChild(td);
+  });
+  thead.appendChild(filterRow);
+
   const tbody = document.getElementById('tableBody');
   tbody.innerHTML = '';
-  currentData.forEach(row => {
+  filteredData.forEach(row => {
     const tr = document.createElement('tr');
     tr.innerHTML = orderedCols.map(c => {
       let v = row[c];
@@ -624,6 +794,94 @@ async function showTable() {
       if (!isStr && v !== null && v !== undefined) v = parseFloat(v);
       const cls = typeof v === 'number' ? (v >= 0 ? 'pos' : 'neg') : '';
       const fmt = typeof v === 'number' ? fmtNum(v) : String(v).substring(0, 30);
+      return `<td class="${cls}">${fmt}</td>`;
+    }).join('');
+    tbody.appendChild(tr);
+  });
+}
+
+function toggleSort(col) {
+  if (tableSortCol === col) {
+    tableSortDir = tableSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    tableSortCol = col;
+    tableSortDir = 'asc';
+  }
+  showTable();
+}
+
+function showSpreadTable() {
+  if (currentData.length === 0) return;
+  document.getElementById('tableContainer').style.display = 'block';
+
+  const yFields = getSelectedYFields();
+  const aggregated = {};
+  currentData.forEach(r => {
+    const key = r.spread_range || '未知';
+    if (!aggregated[key]) {
+      aggregated[key] = { spread_range: key };
+      yFields.forEach(f => aggregated[key][f] = 0);
+    }
+    yFields.forEach(f => {
+      const val = parseFloat(r[f]) || 0;
+      aggregated[key][f] += val;
+    });
+  });
+
+  const cols = ['spread_range', ...yFields];
+  const rows = Object.values(aggregated).sort((a, b) => a.spread_range < b.spread_range ? -1 : 1);
+
+  const thead = document.getElementById('tableHead');
+  thead.innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = cols.map(c => {
+      let v = row[c];
+      const isNum = typeof v === 'number';
+      const cls = isNum ? (v >= 0 ? 'pos' : 'neg') : '';
+      const fmt = isNum ? fmtNum(v) : String(v);
+      return `<td class="${cls}">${fmt}</td>`;
+    }).join('');
+    tbody.appendChild(tr);
+  });
+}
+
+function showSizeTable() {
+  if (currentData.length === 0) return;
+  document.getElementById('tableContainer').style.display = 'block';
+
+  const yFields = getSelectedYFields();
+  const aggregated = {};
+  currentData.forEach(r => {
+    const key = r.size_range || '未知';
+    if (!aggregated[key]) {
+      aggregated[key] = { size_range: key };
+      yFields.forEach(f => aggregated[key][f] = 0);
+    }
+    yFields.forEach(f => {
+      const val = parseFloat(r[f]) || 0;
+      aggregated[key][f] += val;
+    });
+  });
+
+  const cols = ['size_range', ...yFields];
+  const rows = Object.values(aggregated).sort((a, b) => a.size_range < b.size_range ? -1 : 1);
+
+  const thead = document.getElementById('tableHead');
+  thead.innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = cols.map(c => {
+      let v = row[c];
+      const isNum = typeof v === 'number';
+      const cls = isNum ? (v >= 0 ? 'pos' : 'neg') : '';
+      const fmt = isNum ? fmtNum(v) : String(v);
       return `<td class="${cls}">${fmt}</td>`;
     }).join('');
     tbody.appendChild(tr);
@@ -700,14 +958,14 @@ function renderHeatmap(data) {
     data: {
       labels: spreads,
       datasets: sizes.map((size, i) => {
-        const colors = ['#f0c040','#4ade80','#60a5fa','#f87171','#c084fc','#fb923c'];
+        const skyPalette = ['#4FA8D7','#7EC4E8','#3A8AB8','#6AAED6','#2E7DAF','#9AC8E3','#A8D4ED','#1F6A9E'];
         return {
           label: size,
           data: spreads.map(sp => {
             const row = data.find(r => r.spread_range === sp && r.size_range === size);
             return row ? row.value : 0;
           }),
-          backgroundColor: colors[i % colors.length] + 'cc',
+          backgroundColor: skyPalette[i % skyPalette.length] + '99',
         };
       })
     },
@@ -716,12 +974,12 @@ function renderHeatmap(data) {
       maintainAspectRatio: true,
       aspectRatio: 1.5,
       plugins: {
-        legend: { labels: { color: '#aaa' } },
+        legend: { labels: { color: '#888888' } },
         tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.raw)}` } }
       },
       scales: {
-        x: { ticks: { color: '#888' }, grid: { color: '#2a2d3a' } },
-        y: { ticks: { color: '#888', callback: v => fmtNum(v) }, grid: { color: '#2a2d3a' } }
+        x: { ticks: { color: '#888888' }, grid: { color: '#353538' } },
+        y: { ticks: { color: '#888888', callback: v => fmtNum(v) }, grid: { color: '#353538' } }
       }
     }
   });
@@ -763,7 +1021,7 @@ function renderTrueHeatmap(data) {
   });
 
   const ctx = document.getElementById('mainChart').getContext('2d');
-  const colors = ['#f0c040','#4ade80','#60a5fa','#f87171','#c084fc','#fb923c','#34d399','#fbbf24'];
+  const skyPalette = ['#4FA8D7','#7EC4E8','#3A8AB8','#6AAED6','#2E7DAF','#9AC8E3','#A8D4ED','#1F6A9E'];
 
   currentChart = new Chart(ctx, {
     type: 'bar',
@@ -772,8 +1030,8 @@ function renderTrueHeatmap(data) {
       datasets: sizes.map((size, i) => ({
         label: size,
         data: spreads.map(sp => matrix[sp]?.[size] || 0),
-        backgroundColor: colors[i % colors.length] + '99',
-        borderColor: colors[i % colors.length],
+        backgroundColor: skyPalette[i % skyPalette.length] + '99',
+        borderColor: skyPalette[i % skyPalette.length],
         borderWidth: 1,
       }))
     },
@@ -782,7 +1040,7 @@ function renderTrueHeatmap(data) {
       maintainAspectRatio: true,
       aspectRatio: 1.8,
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#aaa', font: { size: 11 } } },
+        legend: { position: 'bottom', labels: { color: '#888888', font: { size: 11 } } },
         tooltip: {
           callbacks: {
             label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.raw)}`
@@ -790,8 +1048,8 @@ function renderTrueHeatmap(data) {
         }
       },
       scales: {
-        x: { ticks: { color: '#888', maxRotation: 45, font: { size: 10 } }, grid: { color: '#2a2d3a' } },
-        y: { ticks: { color: '#888', callback: v => fmtNum(v) }, grid: { color: '#2a2d3a' } }
+        x: { ticks: { color: '#888888', maxRotation: 45, font: { size: 10 } }, grid: { color: '#353538' } },
+        y: { ticks: { color: '#888888', callback: v => fmtNum(v) }, grid: { color: '#353538' } }
       }
     }
   });
