@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跨所可视化分析平台</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a1e; color: #d1d5db; min-height: 100vh; }
+  .header { background: #252529; border-bottom: 1px solid #3a3d42; padding: 16px 32px; display: flex; align-items: center; gap: 24px; }
+  .header h1 { font-size: 18px; font-weight: 600; color: #5DADE2; }
+  .header .subtitle { font-size: 12px; color: #888; }
+  .main { display: flex; min-height: calc(100vh - 60px); }
+
+  /* 左侧控制面板 */
+  .sidebar { width: 320px; background: #252529; border-right: 1px solid #3a3d42; padding: 20px; overflow-y: auto; flex-shrink: 0; }
+  .panel-section { margin-bottom: 24px; }
+  .panel-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 10px; font-weight: 600; }
+
+  /* 选择器样式 */
+  .ctrl-group { margin-bottom: 12px; }
+  .ctrl-label { font-size: 12px; color: #999; margin-bottom: 4px; display: block; }
+  select, input[type="text"], input[type="date"] { width: 100%; background: #2f3136; border: 1px solid #3a3d42; border-radius: 6px; color: #d1d5db; padding: 8px 10px; font-size: 13px; outline: none; transition: border-color 0.2s; }
+  select:focus, input:focus { border-color: #5DADE2; }
+  select[multiple] { height: 120px; }
+
+  /* 图表类型按钮 */
+  .chart-types { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .chart-type-btn { background: #2f3136; border: 1px solid #3a3d42; border-radius: 6px; padding: 8px 4px; text-align: center; font-size: 11px; cursor: pointer; transition: all 0.2s; color: #999; }
+  .chart-type-btn:hover { border-color: #5DADE2; color: #5DADE2; }
+  .chart-type-btn.active { background: #5DADE2; border-color: #5DADE2; color: #1a1a1e; font-weight: 600; }
+
+  /* 快捷卡片 */
+  .quick-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .quick-card { background: #2f3136; border: 1px solid #3a3d42; border-radius: 6px; padding: 10px 8px; cursor: pointer; transition: all 0.2s; font-size: 12px; }
+  .quick-card:hover { border-color: #5DADE2; }
+  .quick-card.active { border-color: #5DADE2; background: #35373d; }
+  .quick-card .qc-title { color: #5DADE2; font-weight: 600; font-size: 11px; }
+  .quick-card .qc-desc { color: #666; font-size: 10px; margin-top: 2px; }
+
+  /* 主图表区域 */
+  .content { flex: 1; padding: 20px; overflow: auto; }
+  .chart-container { background: #252529; border-radius: 8px; border: 1px solid #3a3d42; padding: 20px; margin-bottom: 16px; }
+  .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .chart-title { font-size: 14px; font-weight: 600; color: #5DADE2; }
+  .chart-meta { font-size: 11px; color: #888; }
+
+  canvas { width: 100% !important; }
+
+  /* 数据表格 */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .data-table th { background: #2f3136; color: #5DADE2; padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 1px solid #3a3d42; position: sticky; top: 0; }
+  .data-table td { padding: 7px 12px; border-bottom: 1px solid #2f3136; color: #ccc; }
+  .data-table tr:hover td { background: #2f3136; }
+  .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .data-table .pos { color: #4ade80; }
+  .data-table .neg { color: #f87171; }
+
+  /* 按钮 */
+  .btn { background: #5DADE2; color: #1a1a1e; border: none; border-radius: 6px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn:hover { background: #7fc4e8; }
+  .btn-secondary { background: #2f3136; color: #d1d5db; border: 1px solid #3a3d42; }
+  .btn-secondary:hover { border-color: #5DADE2; color: #5DADE2; }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+
+  /* 筛选标签 */
+  .filter-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .filter-tag { background: #2f3136; border: 1px solid #3a3d42; border-radius: 4px; padding: 3px 8px; font-size: 11px; color: #999; display: flex; align-items: center; gap: 4px; }
+  .filter-tag span { color: #5DADE2; }
+  .filter-tag button { background: none; border: none; color: #666; cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
+  .filter-tag button:hover { color: #f87171; }
+
+  /* 加载状态 */
+  .loading { text-align: center; padding: 40px; color: #666; }
+  .loading::after { content: '...'; animation: dots 1.5s infinite; }
+  @keyframes dots { 0%,20%{content:'.'} 40%{content:'..'} 60%,100%{content:'...'} }
+
+  /* 错误提示 */
+  .error-msg { background: #2a1a1a; border: 1px solid #f87171; border-radius: 6px; padding: 12px; color: #f87171; font-size: 13px; margin-top: 12px; }
+
+  /* 无数据 */
+  .no-data { text-align: center; padding: 40px; color: #555; font-size: 13px; }
+
+  /* 分隔线 */
+  .divider { border: none; border-top: 1px solid #3a3d42; margin: 16px 0; }
+
+  /* 统计卡片 */
+  .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .stat-card { background: #252529; border: 1px solid #3a3d42; border-radius: 8px; padding: 14px 16px; }
+  .stat-card .sc-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .stat-card .sc-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-card .sc-value.pos { color: #4ade80; }
+  .stat-card .sc-value.neg { color: #f87171; }
+  .stat-card .sc-value.neu { color: #d1d5db; }
+
+  /* 复选框组 */
+  .checkbox-group { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; background: #2f3136; border-radius: 6px; padding: 8px; }
+  .checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #ccc; cursor: pointer; }
+  .checkbox-item input { accent-color: #5DADE2; }
+  .checkbox-item:hover { color: #5DADE2; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>跨所可视化分析平台</h1>
+  </div>
+</div>
+
+<div class="main">
+  <!-- ========== 左侧控制面板 ========== -->
+  <div class="sidebar">
+
+    <!-- 1. 数据库选择 -->
+    <div class="panel-section">
+      <div class="panel-title">1. 选择数据库</div>
+      <div class="ctrl-group">
+        <select id="dbSelect" onchange="onDbChange()">
+          <option value="">-- 选择数据库 --</option>
+        </select>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- 2. 数据表选择 -->
+    <div class="panel-section">
+      <div class="panel-title">2. 选择数据表</div>
+      <div class="ctrl-group">
+        <select id="tableSelect" multiple size="8" onchange="onTableChange()" disabled>
+          <option value="">-- 先选择数据库 --</option>
+        </select>
+      </div>
+      <div id="tableInfo" style="font-size: 11px; color: #666; margin-top: 4px;"></div>
+      <div style="margin-top:8px;">
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">已选表：</div>
+        <div id="selectedTables" class="filter-tags"></div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- 3. 字段选择 -->
+    <div class="panel-section">
+      <div class="panel-title">3. 选择字段</div>
+      <div class="ctrl-group">
+        <input type="text" id="yFieldSearch" placeholder="搜索字段..." oninput="filterYFields()" style="margin-bottom:6px;">
+      </div>
+      <div style="margin-bottom:6px;">
+        <button class="btn-secondary" onclick="selectAllFields()" style="padding:4px 10px;font-size:11px;">全选</button>
+        <button class="btn-secondary" onclick="clearAllFields()" style="padding:4px 10px;font-size:11px;">清空</button>
+      </div>
+      <div class="checkbox-group" id="yFieldGroup" style="max-height:200px;">
+        <!-- 动态填充 -->
+      </div>
+      <div style="margin-top:8px;">
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">已选字段：</div>
+        <div id="selectedFields" class="filter-tags"></div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- 4. 日期范围 -->
+    <div class="panel-section">
+      <div class="panel-title">4. 日期范围</div>
+      <div class="ctrl-group">
+        <input type="date" id="dateFrom" style="width:100%;margin-bottom:4px;">
+        <span style="font-size:11px;color:#888;">至</span>
+        <input type="date" id="dateTo" style="width:100%;margin-top:4px;">
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- 5. 图表类型 -->
+    <div class="panel-section">
+      <div class="panel-title">5. 图表类型</div>
+      <div class="chart-types">
+        <div class="chart-type-btn active" onclick="setChartType('line', this)">折线图</div>
+        <div class="chart-type-btn" onclick="setChartType('bar', this)">柱状图</div>
+        <div class="chart-type-btn" onclick="setChartType('pie', this)">饼图</div>
+        <div class="chart-type-btn" onclick="setChartType('doughnut', this)">环形图</div>
+        <div class="chart-type-btn" onclick="setChartType('scatter', this)">散点图</div>
+        <div class="chart-type-btn" onclick="setChartType('radar', this)">雷达图</div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- 6. 查询按钮 -->
+    <div class="panel-section">
+      <button class="btn" onclick="renderChart()" style="width:100%;margin-bottom:8px;">生成图表</button>
+      <button class="btn-secondary" onclick="showTable()" style="width:100%;">查看数据</button>
+    </div>
+
+    <div id="errorBox"></div>
+  </div>
+  
+  <!-- ========== 右侧内容区 ========== -->
+  <div class="content">
+    <div class="stat-cards" id="statCards" style="display:none;"></div>
+    
+    <!-- 图表区域 -->
+    <div class="chart-container" id="chartContainer" style="display:none;">
+      <div class="chart-header">
+        <div class="chart-title" id="chartTitle">图表</div>
+        <div class="chart-meta" id="chartMeta"></div>
+      </div>
+      <canvas id="mainChart"></canvas>
+    </div>
+    
+    <!-- 数据表格 -->
+    <div class="chart-container" id="tableContainer" style="display:none;">
+      <div class="chart-header">
+        <div class="chart-title">数据明细</div>
+        <button class="btn-secondary" style="padding:5px 12px; font-size:11px;" onclick="exportCSV()">导出 CSV</button>
+      </div>
+      <div style="max-height: 500px; overflow: auto;">
+        <table class="data-table" id="dataTable">
+          <thead id="tableHead"></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+    
+    <div class="no-data" id="noData">
+      ← 请从左侧选择数据表和字段，然后点击「生成图表」
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const DB_PATH = '/Users/yy/.hermes/workspace/db/analysis.db';
+let meta = {};
+let dbList = {};
+let currentChart = null;
+let chartType = 'line';
+let currentData = [];
+let currentTable = '';
+let currentDb = '';
+let activeFilters = {};
+let tableColumns = [];
+let yFieldsOptions = [];
+let selectedTables = [];
+let selectedFields = [];
+
+// ============================================================
+// 初始化
+// ============================================================
+document.addEventListener('DOMContentLoaded', async () => {
+  const resp = await fetch('/api/databases');
+  dbList = await resp.json();
+
+  const dbSel = document.getElementById('dbSelect');
+  Object.entries(dbList).forEach(([key, info]) => {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = info.name;
+    dbSel.appendChild(opt);
+  });
+});
+
+async function onDbChange() {
+  const dbKey = document.getElementById('dbSelect').value;
+  currentDb = dbKey;
+  const tableSel = document.getElementById('tableSelect');
+  tableSel.innerHTML = '<option value="">-- 加载中 --</option>';
+  tableSel.disabled = !dbKey;
+
+  if (!dbKey) {
+    tableSel.innerHTML = '<option value="">-- 先选择数据库 --</option>';
+    return;
+  }
+
+  const resp = await fetch(`/api/tables?db=${dbKey}`);
+  meta = await resp.json();
+
+  tableSel.innerHTML = '<option value="">-- 选择数据表 --</option>';
+  const tables = Object.keys(meta);
+  tables.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    tableSel.appendChild(opt);
+  });
+
+  if (tables.length > 0) {
+    const defaultTable = tables.find(t => t.includes('k12_token')) || tables[0];
+    currentTable = defaultTable;
+    tableSel.value = defaultTable;
+    await onTableChange();
+  }
+}
+
+// ============================================================
+// 事件处理
+// ============================================================
+
+async function onTableChange() {
+  const tableSel = document.getElementById('tableSelect');
+  selectedTables = Array.from(tableSel.selectedOptions).map(o => o.value).filter(v => v);
+  currentTable = selectedTables[0] || '';
+
+  renderSelectedTables();
+
+  if (selectedTables.length === 0) {
+    yFieldsOptions = [];
+    selectedFields = [];
+    renderSelectedFields();
+    return;
+  }
+
+  // 收集所有选中表的字段
+  const allColumns = new Map();
+  let dateInfo = [];
+  let totalRows = 0;
+
+  selectedTables.forEach(t => {
+    if (meta[t]) {
+      const info = meta[t];
+      totalRows += info.row_count || 0;
+      if (info.date_range) dateInfo = info.date_range;
+      info.columns.forEach(c => {
+        if (!allColumns.has(c.name)) {
+          allColumns.set(c.name, c);
+        }
+      });
+    }
+  });
+
+  document.getElementById('tableInfo').textContent =
+    `已选 ${selectedTables.length} 表 | 共 ${totalRows.toLocaleString()} 条`;
+
+  // 填充字段复选框
+  const yGroup = document.getElementById('yFieldGroup');
+  yGroup.innerHTML = '';
+  const excludeNames = ['id', 'created_at', 'date', '日期'];
+  yFieldsOptions = [];
+  const defaultFields = ['alpha', 'pnl', 'theo', 'bundle', 'gas', 'order_count', 'theoretical_profit', '实际利润', 'bundle_fee', 'gas_fee', 'bnb_pnl', 'spread_range', 'size_range', 'token'];
+
+  Array.from(allColumns.values()).forEach(c => {
+    if (excludeNames.includes(c.name)) return;
+    yFieldsOptions.push(c);
+    const div = document.createElement('div');
+    div.className = 'checkbox-item';
+    const isInDefault = defaultFields.some(f => c.name.includes(f) || f.includes(c.name));
+    const isSelected = selectedFields.includes(c.name);
+    const checked = (isInDefault || isSelected) ? 'checked' : '';
+    const tableCount = selectedTables.filter(t => meta[t]?.columns.some(col => col.name === c.name)).length;
+    const tableHint = selectedTables.length > 1 ? ` (${tableCount}表)` : '';
+    div.innerHTML = `<input type="checkbox" id="yf_${c.name}" value="${c.name}" ${checked} onclick="onYFieldChange()">
+                     <label for="yf_${c.name}">${c.name}${tableHint}</label>`;
+    yGroup.appendChild(div);
+  });
+
+  // 设置日期范围
+  if (dateInfo[0]) document.getElementById('dateFrom').value = dateInfo[0];
+  if (dateInfo[1]) document.getElementById('dateTo').value = dateInfo[1];
+
+  onYFieldChange();
+}
+
+function renderSelectedTables() {
+  const container = document.getElementById('selectedTables');
+  container.innerHTML = '';
+  selectedTables.forEach(t => {
+    const tag = document.createElement('div');
+    tag.className = 'filter-tag';
+    tag.innerHTML = `<span>${t}</span> <button onclick="removeTable('${t}')">×</button>`;
+    container.appendChild(tag);
+  });
+}
+
+function removeTable(t) {
+  selectedTables = selectedTables.filter(x => x !== t);
+  const tableSel = document.getElementById('tableSelect');
+  Array.from(tableSel.options).forEach(o => {
+    if (o.value === t) o.selected = false;
+  });
+  renderSelectedTables();
+  onTableChange();
+}
+
+function renderSelectedFields() {
+  const container = document.getElementById('selectedFields');
+  container.innerHTML = '';
+  selectedFields.forEach(f => {
+    const tag = document.createElement('div');
+    tag.className = 'filter-tag';
+    tag.innerHTML = `<span>${f}</span> <button onclick="removeField('${f}')">×</button>`;
+    container.appendChild(tag);
+  });
+}
+
+function removeField(f) {
+  selectedFields = selectedFields.filter(x => x !== f);
+  const cb = document.getElementById('yf_' + f);
+  if (cb) cb.checked = false;
+  renderSelectedFields();
+}
+
+function selectAllFields() {
+  yFieldsOptions.forEach(c => {
+    if (!selectedFields.includes(c.name)) {
+      selectedFields.push(c.name);
+    }
+    const cb = document.getElementById('yf_' + c.name);
+    if (cb) cb.checked = true;
+  });
+  renderSelectedFields();
+}
+
+function clearAllFields() {
+  selectedFields = [];
+  document.querySelectorAll('#yFieldGroup input').forEach(cb => cb.checked = false);
+  renderSelectedFields();
+}
+
+function filterYFields() {
+  const search = document.getElementById('yFieldSearch').value.toLowerCase();
+  const yGroup = document.getElementById('yFieldGroup');
+  yGroup.innerHTML = '';
+  const excludeNames = ['id', 'created_at', 'date', '日期'];
+  yFieldsOptions.forEach(c => {
+    if (excludeNames.includes(c.name)) return;
+    if (c.name.toLowerCase().includes(search)) {
+      const div = document.createElement('div');
+      div.className = 'checkbox-item';
+      const isSelected = selectedFields.includes(c.name);
+      const checked = isSelected ? 'checked' : '';
+      div.innerHTML = `<input type="checkbox" id="yf_${c.name}" value="${c.name}" ${checked} onclick="onYFieldChange()">
+                       <label for="yf_${c.name}">${c.name} (${c.type})</label>`;
+      yGroup.appendChild(div);
+    }
+  });
+}
+
+function onYFieldChange() {
+  selectedFields = [];
+  document.querySelectorAll('#yFieldGroup input:checked').forEach(cb => {
+    if (!selectedFields.includes(cb.value)) {
+      selectedFields.push(cb.value);
+    }
+  });
+  renderSelectedFields();
+}
+
+function setChartType(type, el) {
+  chartType = type;
+  document.querySelectorAll('.chart-type-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  if (currentData.length > 0) renderCurrentChart();
+}
+
+function setDateRange(range) {
+  const to = new Date();
+  let from = new Date();
+  if (range === '7d') from.setDate(to.getDate() - 7);
+  else if (range === '30d') from.setDate(to.getDate() - 30);
+  else { document.getElementById('dateFrom').value = ''; document.getElementById('dateTo').value = ''; return; }
+
+  const fromStr = from.toISOString().split('T')[0];
+  const toStr = to.toISOString().split('T')[0];
+  document.getElementById('dateFrom').value = fromStr;
+  document.getElementById('dateTo').value = toStr;
+}
+
+function getSelectedYFields() {
+  const fields = [];
+  document.querySelectorAll('#yFieldGroup input:checked').forEach(cb => fields.push(cb.value));
+  return fields;
+}
+
+// ============================================================
+// 数据查询 & 渲染
+// ============================================================
+
+async function renderChart() {
+  const table = currentTable;
+  const xField = 'date';
+  const yFields = getSelectedYFields();
+  const dateFrom = document.getElementById('dateFrom').value;
+  const dateTo = document.getElementById('dateTo').value;
+
+  console.log('renderChart called:', { table, selectedTables, currentDb, yFields, dateFrom, dateTo });
+
+  document.getElementById('errorBox').innerHTML = '';
+  document.getElementById('noData').style.display = 'none';
+  document.getElementById('chartContainer').style.display = 'none';
+  document.getElementById('tableContainer').style.display = 'none';
+
+  if (!table) { showError('请先选择数据表'); return; }
+  if (yFields.length === 0) { showError('请至少选择一个字段'); return; }
+  if (!currentDb) { showError('请先选择数据库'); return; }
+
+  try {
+    const resp = await fetch('/api/query', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ table, tables: selectedTables, db: currentDb, x_field: xField, y_fields: yFields, date_from: dateFrom, date_to: dateTo, filters: activeFilters })
+    });
+    const result = await resp.json();
+    console.log('Query result:', result);
+    if (!result.success) { showError(result.error); return; }
+
+    currentData = result.data;
+    tableColumns = result.data.length > 0 ? Object.keys(result.data[0]) : [xField, ...yFields];
+
+    updateStatCards(result.data, yFields);
+    renderCurrentChart();
+
+    document.getElementById('chartContainer').style.display = 'block';
+    document.getElementById('chartTitle').textContent = `${yFields.join(' + ')} by ${xField}`;
+    document.getElementById('chartMeta').textContent = `${result.count} 条数据 | 表: ${selectedTables.join(', ')}`;
+    document.getElementById('errorBox').innerHTML = '';
+
+  } catch(e) { showError(e.message); console.error('renderChart error:', e); }
+}
+
+function renderCurrentChart() {
+  if (currentData.length === 0) return;
+  if (currentChart) currentChart.destroy();
+
+  const yFields = getSelectedYFields();
+  const dateCols = ['date', '日期', 'Date', 'DATE'];
+  let xField = 'date';
+  for (let col of tableColumns) {
+    if (dateCols.includes(col)) {
+      xField = col;
+      break;
+    }
+  }
+
+  const labels = currentData.map(r => String(r[xField]).substring(0, 20));
+  
+  const datasets = yFields.map((field, i) => {
+    const colors = ['#5DADE2','#4ade80','#a78bfa','#f87171','#38bdf8','#fb923c'];
+    return {
+      label: field,
+      data: currentData.map(r => r[field] !== null ? parseFloat(r[field]) : 0),
+      borderColor: colors[i % colors.length],
+      backgroundColor: chartType === 'line' ? 'transparent' : colors[i % colors.length] + 'cc',
+      borderWidth: 2,
+      tension: 0.3,
+      pointRadius: chartType === 'line' ? 3 : 0,
+      pointHoverRadius: 5,
+    };
+  });
+  
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  currentChart = new Chart(ctx, {
+    type: chartType,
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: chartType === 'pie' || chartType === 'doughnut' ? 1.5 : 2.5,
+      plugins: {
+        legend: { labels: { color: '#aaa', font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.raw)}`
+          }
+        }
+      },
+      scales: chartType === 'pie' || chartType === 'doughnut' || chartType === 'radar' ? {} : {
+        x: { ticks: { color: '#888', maxRotation: 45 }, grid: { color: '#2a2d3a' } },
+        y: { ticks: { color: '#888', callback: v => fmtNum(v) }, grid: { color: '#2a2d3a' } }
+      }
+    }
+  });
+}
+
+function updateStatCards(data, yFields) {
+  document.getElementById('statCards').style.display = 'grid';
+
+  let html = '';
+  yFields.slice(0, 4).forEach(field => {
+    const values = data.map(r => parseFloat(r[field]) || 0).filter(v => !isNaN(v));
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = values.length ? sum / values.length : 0;
+    const max = values.length ? Math.max(...values) : 0;
+    const min = values.length ? Math.min(...values) : 0;
+    const sumClass = sum >= 0 ? 'pos' : 'neg';
+    html += `<div class="stat-card"><div class="sc-label">${field} 合计</div><div class="sc-value ${sumClass}">${fmtNum(sum)}</div></div>`;
+    html += `<div class="stat-card"><div class="sc-label">${field} 均值</div><div class="sc-value neu">${fmtNum(avg)}</div></div>`;
+  });
+  html += `<div class="stat-card"><div class="sc-label">记录数</div><div class="sc-value neu">${data.length.toLocaleString()}</div></div>`;
+
+  document.getElementById('statCards').innerHTML = html;
+}
+
+async function showTable() {
+  const tableSel = document.getElementById('tableSelect');
+  const table = tableSel.options[tableSel.selectedIndex]?.value || currentTable;
+  if (!table) { showError('请先选择数据表'); return; }
+  if (currentData.length === 0) { await renderChart(); }
+  if (currentData.length === 0) return;
+  
+  document.getElementById('tableContainer').style.display = 'block';
+  document.getElementById('chartContainer').style.display = 'none';
+
+  const dateCols = ['date', '日期', 'Date', 'DATE'];
+  const orderedCols = [...tableColumns].sort((a, b) => {
+    if (dateCols.includes(a) && !dateCols.includes(b)) return -1;
+    if (!dateCols.includes(a) && dateCols.includes(b)) return 1;
+    return 0;
+  });
+
+  const thead = document.getElementById('tableHead');
+  thead.innerHTML = '<tr>' + orderedCols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+  
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  currentData.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = orderedCols.map(c => {
+      let v = row[c];
+      const isStr = typeof v === 'string';
+      if (!isStr && v !== null && v !== undefined) v = parseFloat(v);
+      const cls = typeof v === 'number' ? (v >= 0 ? 'pos' : 'neg') : '';
+      const fmt = typeof v === 'number' ? fmtNum(v) : String(v).substring(0, 30);
+      return `<td class="${cls}">${fmt}</td>`;
+    }).join('');
+    tbody.appendChild(tr);
+  });
+}
+
+function exportCSV() {
+  if (!currentData.length) return;
+  const headers = tableColumns.join(',');
+  const rows = currentData.map(row => tableColumns.map(c => {
+    const v = row[c];
+    return typeof v === 'number' ? v : `"${v}"`;
+  }).join(','));
+  const csv = [headers, ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `export_${currentTable}_${Date.now()}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// 快捷预设
+// ============================================================
+
+async function applyPreset(preset) {
+  document.getElementById('dbSelect').value = 'analysis';
+  await onDbChange();
+  document.getElementById('tableSelect').value = 'k12_token_spread_size_daily_v2';
+  await onTableChange();
+
+  if (preset === 'daily_pnl') {
+    document.querySelectorAll('#yFieldGroup input').forEach(cb => cb.checked = cb.value === 'alpha');
+    setChartType('line', document.querySelector('.chart-type-btn[onclick="setChartType(\'line\', this)"]'));
+  } else if (preset === 'heatmap') {
+    document.getElementById('noData').style.display = 'none';
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+    try {
+      const resp = await fetch('/api/heatmap', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ table: currentTable || 'k12_token_spread_size_daily_v2', db: currentDb, metric: 'alpha', date_from: dateFrom, date_to: dateTo })
+      });
+      const data = await resp.json();
+      renderTrueHeatmap(data);
+      document.getElementById('chartContainer').style.display = 'block';
+      document.getElementById('chartTitle').textContent = 'Alpha 热力图（价差区间 × 规模区间）';
+      document.getElementById('tableContainer').style.display = 'none';
+    } catch(e) { showError(e.message); }
+    return;
+  } else if (preset === 'spread_top') {
+    document.querySelectorAll('#yFieldGroup input').forEach(cb => cb.checked = ['alpha','theoretical_profit','bundle_fee'].includes(cb.value));
+    setChartType('bar', document.querySelector('.chart-type-btn[onclick="setChartType(\'bar\', this)"]'));
+  } else if (preset === 'size_top') {
+    document.querySelectorAll('#yFieldGroup input').forEach(cb => cb.checked = ['alpha','theoretical_profit','bundle_fee'].includes(cb.value));
+    setChartType('bar', document.querySelector('.chart-type-btn[onclick="setChartType(\'bar\', this)"]'));
+  }
+
+  renderChart();
+}
+
+function renderHeatmap(data) {
+  if (currentChart) currentChart.destroy();
+  
+  // 提取 spread_range 和 size_range 的唯一值
+  const spreads = [...new Set(data.map(r => r.spread_range))].sort();
+  const sizes = [...new Set(data.map(r => r.size_range))].sort();
+  
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  
+  // 简单用柱状图模拟热力图（每组堆叠柱）
+  currentChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: spreads,
+      datasets: sizes.map((size, i) => {
+        const colors = ['#f0c040','#4ade80','#60a5fa','#f87171','#c084fc','#fb923c'];
+        return {
+          label: size,
+          data: spreads.map(sp => {
+            const row = data.find(r => r.spread_range === sp && r.size_range === size);
+            return row ? row.value : 0;
+          }),
+          backgroundColor: colors[i % colors.length] + 'cc',
+        };
+      })
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1.5,
+      plugins: {
+        legend: { labels: { color: '#aaa' } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.raw)}` } }
+      },
+      scales: {
+        x: { ticks: { color: '#888' }, grid: { color: '#2a2d3a' } },
+        y: { ticks: { color: '#888', callback: v => fmtNum(v) }, grid: { color: '#2a2d3a' } }
+      }
+    }
+  });
+}
+
+// ============================================================
+// 工具函数
+// ============================================================
+
+function fmtNum(v) {
+  if (v === null || v === undefined || isNaN(v)) return '0';
+  if (typeof v === 'string') return v;
+  v = parseFloat(v);
+  if (Math.abs(v) >= 1e6) return (v / 1e6).toFixed(1) + 'm';
+  if (Math.abs(v) >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+  return v.toFixed(2);
+}
+
+function showError(msg) {
+  document.getElementById('errorBox').innerHTML = `<div class="error-msg">${msg}</div>`;
+}
+
+// ============================================================
+// 热力图渲染增强（spread × size 交叉矩阵）
+// ============================================================
+
+function renderTrueHeatmap(data) {
+  if (currentChart) currentChart.destroy();
+  if (!data || data.length === 0) { showError('无热力图数据'); return; }
+
+  const spreads = [...new Set(data.map(r => r.spread_range))].sort();
+  const sizes = [...new Set(data.map(r => r.size_range))].sort();
+
+  // 构建矩阵
+  const matrix = {};
+  data.forEach(r => {
+    if (!matrix[r.spread_range]) matrix[r.spread_range] = {};
+    matrix[r.spread_range][r.size_range] = r.value;
+  });
+
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  const colors = ['#f0c040','#4ade80','#60a5fa','#f87171','#c084fc','#fb923c','#34d399','#fbbf24'];
+
+  currentChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: spreads,
+      datasets: sizes.map((size, i) => ({
+        label: size,
+        data: spreads.map(sp => matrix[sp]?.[size] || 0),
+        backgroundColor: colors[i % colors.length] + '99',
+        borderColor: colors[i % colors.length],
+        borderWidth: 1,
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1.8,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#aaa', font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.raw)}`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#888', maxRotation: 45, font: { size: 10 } }, grid: { color: '#2a2d3a' } },
+        y: { ticks: { color: '#888', callback: v => fmtNum(v) }, grid: { color: '#2a2d3a' } }
+      }
+    }
+  });
+
+  document.getElementById('chartContainer').style.display = 'block';
+  document.getElementById('noData').style.display = 'none';
+}
+</script>
+</body>
+</html>
