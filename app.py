@@ -6,6 +6,8 @@ K12 可视化分析平台
 
 import sqlite3
 import json
+import os
+import csv
 from flask import Flask, request, render_template, jsonify
 from datetime import datetime, timedelta
 
@@ -16,6 +18,8 @@ app.static_folder = 'static'
 DB_PATH = '/Users/yy/.hermes/workspace/db/analysis.db'
 ORDERS_DB_PATH = '/Users/yy/.hermes/workspace/db/orders.db'
 SUMMARY_DB_PATH = '/Users/yy/.hermes/workspace/db/summary.db'
+BACKTEST_DB_PATH = '/Users/yy/.hermes/workspace/db/backtest_experiments.db'
+BACKTEST_REPORT_ROOT = '/Users/yy/.hermes/workspace/db/回测项目/量价关系信号_alpha市场/报告'
 MAX_ROWS = 50000
 
 DATABASES = {
@@ -36,6 +40,57 @@ for db_key, db_info in DATABASES.items():
         conn.close()
     except:
         pass
+
+
+def init_backtest_db():
+    """初始化回测实验记录库（独立于现有分析库）"""
+    conn = sqlite3.connect(BACKTEST_DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS backtest_experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            experiment_name TEXT NOT NULL,
+            strategy_version TEXT,
+            split_name TEXT,
+            total_return_pct REAL,
+            max_drawdown_pct REAL,
+            trades INTEGER,
+            trade_volume_usd REAL,
+            win_rate_pct REAL,
+            sharpe REAL,
+            change_summary TEXT,
+            param_summary TEXT,
+            direction TEXT,
+            tags TEXT,
+            metric_version TEXT,
+            metrics_json TEXT,
+            metric_formula_text TEXT,
+            params_json TEXT,
+            notes TEXT
+        )
+        """
+    )
+    cur.execute("PRAGMA table_info(backtest_experiments)")
+    exists_cols = {r[1] for r in cur.fetchall()}
+    add_cols = []
+    if "metric_version" not in exists_cols:
+        add_cols.append("ALTER TABLE backtest_experiments ADD COLUMN metric_version TEXT")
+    if "metrics_json" not in exists_cols:
+        add_cols.append("ALTER TABLE backtest_experiments ADD COLUMN metrics_json TEXT")
+    if "metric_formula_text" not in exists_cols:
+        add_cols.append("ALTER TABLE backtest_experiments ADD COLUMN metric_formula_text TEXT")
+    if "trade_volume_usd" not in exists_cols:
+        add_cols.append("ALTER TABLE backtest_experiments ADD COLUMN trade_volume_usd REAL")
+    if "change_summary" not in exists_cols:
+        add_cols.append("ALTER TABLE backtest_experiments ADD COLUMN change_summary TEXT")
+    if "param_summary" not in exists_cols:
+        add_cols.append("ALTER TABLE backtest_experiments ADD COLUMN param_summary TEXT")
+    for sql in add_cols:
+        cur.execute(sql)
+    conn.commit()
+    conn.close()
 
 def get_db_path(table=None, db=None):
     """根据表名或数据库参数选择数据库"""
@@ -423,6 +478,12 @@ def index():
     meta = get_tables_meta()
     return render_template('index.html', meta=meta)
 
+
+@app.route('/backtest')
+def backtest():
+    """回测实验工作台（独立页面）"""
+    return render_template('backtest.html')
+
 @app.route('/api/databases')
 def api_databases():
     """获取所有数据库及其表"""
@@ -570,7 +631,300 @@ def api_daily():
     conn.close()
     return jsonify(rows)
 
+
+@app.route('/api/backtest/experiments', methods=['GET'])
+def api_backtest_experiments():
+    """查询回测实验记录"""
+    split = request.args.get('split')
+    keyword = request.args.get('keyword')
+    limit = min(int(request.args.get('limit', 500)), 2000)
+
+    conn = sqlite3.connect(BACKTEST_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    where_parts = []
+    params = []
+    if split:
+        where_parts.append("split_name = ?")
+        params.append(split)
+    if keyword:
+        where_parts.append("(experiment_name LIKE ? OR direction LIKE ? OR notes LIKE ? OR tags LIKE ?)")
+        like_kw = f"%{keyword}%"
+        params.extend([like_kw, like_kw, like_kw, like_kw])
+
+    where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    sql = f"""
+        SELECT *
+        FROM backtest_experiments
+        {where_sql}
+        ORDER BY datetime(created_at) DESC, id DESC
+        LIMIT ?
+    """
+    params.append(limit)
+    cur.execute(sql, params)
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return jsonify({"success": True, "data": rows, "count": len(rows)})
+
+
+@app.route('/api/backtest/experiments', methods=['POST'])
+def api_backtest_insert_experiment():
+    """新增回测实验记录"""
+    body = request.json or {}
+    experiment_name = (body.get('experiment_name') or '').strip()
+    if not experiment_name:
+        return jsonify({"error": "experiment_name 不能为空"}), 400
+
+    created_at = body.get('created_at') or datetime.now().isoformat(timespec='seconds')
+    params_obj = body.get('params', {})
+    params_json = json.dumps(params_obj, ensure_ascii=False) if isinstance(params_obj, dict) else str(params_obj)
+    metrics_obj = body.get('metrics', {})
+    metrics_json = json.dumps(metrics_obj, ensure_ascii=False) if isinstance(metrics_obj, dict) else str(metrics_obj)
+
+    conn = sqlite3.connect(BACKTEST_DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO backtest_experiments (
+            created_at, experiment_name, strategy_version, split_name,
+            total_return_pct, max_drawdown_pct, trades, trade_volume_usd, win_rate_pct, sharpe,
+            change_summary, param_summary, direction, tags, metric_version, metrics_json, metric_formula_text, params_json, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            created_at,
+            experiment_name,
+            body.get('strategy_version'),
+            body.get('split_name'),
+            body.get('total_return_pct'),
+            body.get('max_drawdown_pct'),
+            body.get('trades'),
+            body.get('trade_volume_usd'),
+            body.get('win_rate_pct'),
+            body.get('sharpe'),
+            body.get('change_summary'),
+            body.get('param_summary'),
+            body.get('direction'),
+            body.get('tags'),
+            body.get('metric_version') or 'factor_detection_metric_library_v1',
+            metrics_json,
+            body.get('metric_formula_text'),
+            params_json,
+            body.get('notes'),
+        ),
+    )
+    new_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "id": new_id})
+
+
+@app.route('/api/backtest/experiments/<int:exp_id>', methods=['PUT'])
+def api_backtest_update_experiment(exp_id: int):
+    """更新回测实验记录（便于迭代复盘）"""
+    body = request.json or {}
+    allowed = {
+        "experiment_name", "strategy_version", "split_name", "total_return_pct",
+        "max_drawdown_pct", "trades", "trade_volume_usd", "win_rate_pct", "sharpe",
+        "change_summary", "param_summary", "direction", "tags", "notes",
+        "params_json", "metric_version", "metrics_json", "metric_formula_text"
+    }
+    updates = []
+    params = []
+
+    for k, v in body.items():
+        if k not in allowed:
+            continue
+        if k == "params_json" and isinstance(v, dict):
+            v = json.dumps(v, ensure_ascii=False)
+        updates.append(f"{k} = ?")
+        params.append(v)
+
+    if not updates:
+        return jsonify({"error": "没有可更新字段"}), 400
+
+    params.append(exp_id)
+    conn = sqlite3.connect(BACKTEST_DB_PATH)
+    cur = conn.cursor()
+    cur.execute(f"UPDATE backtest_experiments SET {', '.join(updates)} WHERE id = ?", params)
+    conn.commit()
+    affected = cur.rowcount
+    conn.close()
+    return jsonify({"success": True, "updated": affected})
+
+
+@app.route('/api/backtest/experiments/clear', methods=['POST'])
+def api_backtest_clear_experiments():
+    """清空回测实验记录（谨慎操作）"""
+    conn = sqlite3.connect(BACKTEST_DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM backtest_experiments")
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "deleted": deleted})
+
+
+def _safe_float(v):
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+
+def _read_equity_curve_csv(csv_path: str) -> list[dict]:
+    rows = []
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            x = r.get("minute") or r.get("date") or r.get("ts") or r.get("time")
+            eq = _safe_float(r.get("equity"))
+            if x is None or eq is None:
+                continue
+            rows.append({"x": x, "equity": eq})
+    if not rows:
+        return []
+    peak = rows[0]["equity"]
+    for item in rows:
+        if item["equity"] > peak:
+            peak = item["equity"]
+        item["drawdown_pct"] = (item["equity"] / peak - 1.0) * 100.0 if peak > 0 else 0.0
+    return rows
+
+
+def _read_trade_events_csv(csv_path: str) -> list[dict]:
+    events = []
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            et = r.get("entry_time")
+            xt = r.get("exit_time")
+            ep = _safe_float(r.get("entry_price"))
+            xp = _safe_float(r.get("exit_price"))
+            if et and ep is not None:
+                events.append({"x": et, "price": ep, "side": "buy"})
+            if xt and xp is not None:
+                events.append({"x": xt, "price": xp, "side": "sell"})
+    return events
+
+
+def _read_trade_curve_csv(csv_path: str) -> list[dict]:
+    """按交易笔数构建收益曲线（每笔交易一个点）"""
+    rows = []
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            rt = _safe_float(r.get("return_pct"))
+            et = r.get("exit_time") or r.get("entry_time") or r.get("time")
+            if rt is None or not et:
+                continue
+            rows.append({"time": et, "ret_pct": rt})
+    if not rows:
+        return []
+    equity = 1.0
+    out = []
+    peak = equity
+    for i, r in enumerate(rows, start=1):
+        equity *= (1.0 + r["ret_pct"] / 100.0)
+        if equity > peak:
+            peak = equity
+        dd = (equity / peak - 1.0) * 100.0 if peak > 0 else 0.0
+        out.append({"x": r["time"], "equity": equity, "drawdown_pct": dd, "trade_idx": i})
+    return out
+
+
+@app.route('/api/backtest/experiments/<int:exp_id>/curve', methods=['GET'])
+def api_backtest_experiment_curve(exp_id: int):
+    """根据实验记录返回对应净值/回撤曲线"""
+    conn = sqlite3.connect(BACKTEST_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM backtest_experiments WHERE id = ?", (exp_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "实验不存在"}), 404
+    rec = dict(row)
+
+    split = (rec.get("split_name") or "").strip()
+    direction = (rec.get("direction") or "").strip()
+    params_json = rec.get("params_json") or "{}"
+    notes = rec.get("notes") or ""
+    report_root = BACKTEST_REPORT_ROOT
+    curve_mode = (request.args.get("mode") or "trade").strip().lower()
+
+    candidates = []
+    if direction and split:
+        candidates.append(os.path.join(report_root, direction, split, "组合净值曲线.csv"))
+    if direction:
+        candidates.append(os.path.join(report_root, direction, "组合净值曲线.csv"))
+
+    try:
+        params_obj = json.loads(params_json) if isinstance(params_json, str) else {}
+    except Exception:
+        params_obj = {}
+    source_curve_csv = params_obj.get("source_curve_csv")
+    if isinstance(source_curve_csv, str) and source_curve_csv:
+        if os.path.isabs(source_curve_csv):
+            candidates.append(source_curve_csv)
+        else:
+            candidates.append(os.path.join(report_root, source_curve_csv))
+    src_file = params_obj.get("source_file")
+    if isinstance(src_file, str) and src_file:
+        src_abs = os.path.join(report_root, src_file)
+        candidates.append(os.path.join(os.path.dirname(src_abs), "组合净值曲线.csv"))
+    source_report = params_obj.get("source_report")
+    if isinstance(source_report, str) and source_report:
+        rep_abs = os.path.join(report_root, source_report)
+        candidates.append(os.path.join(os.path.dirname(rep_abs), f"{split}_组合净值曲线.csv"))
+
+    if "from " in notes:
+        p = notes.split("from ", 1)[1].strip()
+        notes_abs = os.path.join(report_root, p)
+        candidates.append(os.path.join(os.path.dirname(notes_abs), "组合净值曲线.csv"))
+
+    dedup = []
+    seen = set()
+    for c in candidates:
+        cc = os.path.normpath(c)
+        if cc not in seen:
+            seen.add(cc)
+            dedup.append(cc)
+
+    for c in dedup:
+        if os.path.exists(c):
+            trade_candidates = []
+            if c.endswith("组合净值曲线.csv"):
+                trade_candidates.append(c.replace("组合净值曲线.csv", "组合交易明细.csv"))
+            source_trade_csv = params_obj.get("source_trade_csv")
+            if isinstance(source_trade_csv, str) and source_trade_csv:
+                if os.path.isabs(source_trade_csv):
+                    trade_candidates.append(source_trade_csv)
+                else:
+                    trade_candidates.append(os.path.join(report_root, source_trade_csv))
+
+            trades = []
+            trade_curve = []
+            for tc in trade_candidates:
+                if os.path.exists(tc):
+                    trades = _read_trade_events_csv(tc)
+                    trade_curve = _read_trade_curve_csv(tc)
+                    if trades or trade_curve:
+                        break
+
+            # 默认优先交易级曲线，点数与交易次数同量级
+            if curve_mode == "trade" and trade_curve:
+                return jsonify({"success": True, "source": c, "mode": "trade", "data": trade_curve, "trades": trades})
+
+            data = _read_equity_curve_csv(c)
+            if data:
+                return jsonify({"success": True, "source": c, "mode": "bar", "data": data, "trades": trades})
+
+    return jsonify({"error": "未找到该实验对应的净值曲线文件", "candidates": dedup}), 404
+
 if __name__ == '__main__':
+    init_backtest_db()
     print("=" * 50)
     print("K12 可视化分析平台")
     print("访问地址: http://localhost:5050")

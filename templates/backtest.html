@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>回测实验工作台</title>
+  <style>
+    :root {
+      --sky: #4FA8D7;
+      --gray-1: #2A2A2E;
+      --gray-2: #353538;
+      --gray-3: #404044;
+      --gray-4: #888888;
+      --gray-5: #d0d0d0;
+      --bg: #1E1E22;
+      --pos: #4CAF82;
+      --neg: #E05C5C;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--gray-5); }
+    .header { background: var(--gray-1); border-bottom: 1px solid var(--gray-3); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { color: var(--sky); font-size: 18px; }
+    .top-tabs { display: flex; gap: 8px; }
+    .top-tab { padding: 6px 12px; border: 1px solid var(--gray-3); border-radius: 6px; color: var(--gray-4); text-decoration: none; font-size: 12px; }
+    .top-tab.active { border-color: var(--sky); color: var(--sky); background: var(--gray-2); }
+    .main { display: grid; grid-template-columns: 360px 1fr; gap: 14px; padding: 14px; }
+    .panel { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 14px; }
+    .panel h2 { font-size: 13px; color: var(--sky); margin-bottom: 10px; }
+    .group { margin-bottom: 10px; }
+    .group label { display: block; font-size: 12px; color: var(--gray-4); margin-bottom: 4px; }
+    .group input, .group select, .group textarea {
+      width: 100%; background: var(--gray-2); border: 1px solid var(--gray-3); color: var(--gray-5);
+      border-radius: 6px; padding: 8px;
+    }
+    .group textarea { min-height: 70px; resize: vertical; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn {
+      flex: 1; padding: 9px 10px; border-radius: 6px; border: none; cursor: pointer;
+      background: var(--sky); color: #111; font-weight: 600;
+    }
+    .btn.secondary { background: var(--gray-2); color: var(--gray-5); border: 1px solid var(--gray-3); }
+    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+    .card { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 10px; }
+    .card .k { color: var(--gray-4); font-size: 11px; margin-bottom: 2px; }
+    .card .v { font-size: 18px; font-weight: 700; }
+    .v.pos { color: var(--pos); }
+    .v.neg { color: var(--neg); }
+    .charts { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .chart-box { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 10px; }
+    .chart-box h3 { color: var(--sky); font-size: 12px; margin-bottom: 8px; }
+    .table-wrap { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 10px; margin-top: 10px; max-height: 360px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+    th, td { border-bottom: 1px solid var(--gray-3); padding: 6px; text-align: center; vertical-align: middle; }
+    th { color: var(--sky); background: var(--gray-1); white-space: nowrap; }
+    td { word-break: break-word; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: var(--gray-2); }
+    tbody tr.active-row { outline: 1px solid var(--sky); background: rgba(79,168,215,0.12); }
+    .muted { color: var(--gray-4); font-size: 11px; }
+    .chart-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+    .toolbar-btn {
+      background: var(--gray-2);
+      border: 1px solid var(--gray-3);
+      color: var(--gray-5);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .toolbar-btn:hover { border-color: var(--sky); color: var(--sky); }
+    .toolbar-check { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--gray-4); }
+    .range-row { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+    .range-row label { font-size: 11px; color: var(--gray-4); min-width: 52px; }
+    .range-row input[type="range"] { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>回测实验工作台</h1>
+    <div class="top-tabs">
+      <a class="top-tab" href="/">数据分析</a>
+      <a class="top-tab active" href="/backtest">回测实验</a>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="panel">
+      <h2>记录新实验</h2>
+      <div class="group"><label>实验名</label><input id="f_name" placeholder="如: 动态A池 w240 tp0.5"></div>
+      <div class="group"><label>策略版本</label><input id="f_version" placeholder="v2-dynliq-netedge"></div>
+      <div class="group"><label>Split</label>
+        <select id="f_split">
+          <option value="train">train</option>
+          <option value="test">test</option>
+          <option value="holdout">holdout</option>
+        </select>
+      </div>
+      <div class="group"><label>总收益(%)</label><input id="f_ret" type="number" step="0.0001"></div>
+      <div class="group"><label>最大回撤(%)</label><input id="f_mdd" type="number" step="0.0001"></div>
+      <div class="group"><label>交易次数</label><input id="f_trades" type="number"></div>
+      <div class="group"><label>成交量(USD)</label><input id="f_volume" type="number" step="0.01"></div>
+      <div class="group"><label>胜率(%)</label><input id="f_win" type="number" step="0.0001"></div>
+      <div class="group"><label>Sharpe</label><input id="f_sharpe" type="number" step="0.0001"></div>
+      <div class="group"><label>改动点</label><textarea id="f_change_summary" placeholder="如: 引入动态A池；从静态token名单切换为时变流动性分层"></textarea></div>
+      <div class="group"><label>本次参数设置</label><textarea id="f_param_summary" placeholder="如: dynamic_slippage=on, net_edge_k=1.5, window=240, top_pct=0.5"></textarea></div>
+      <div class="group"><label>核心指标(JSON, 参考因子指标库)</label><textarea id="f_metrics" placeholder='{"ic":0.03,"rank_ic":0.05,"ir":0.8,"top_bottom_spread":1.2,"alpha":0.6,"sharpe":1.1,"calmar":0.9,"mdd":-3.2}'></textarea></div>
+      <div class="group"><label>指标公式与含义</label><textarea id="f_metric_formula_text" placeholder="示例：\n- Sharpe=E[Rp-Rf]/σ(Rp)，含义：单位波动风险下的超额收益\n- MDD=max((Peak-Value)/Peak)，含义：历史最深回撤"></textarea></div>
+      <div class="group"><label>备注</label><textarea id="f_notes" placeholder="写下结论和下一步"></textarea></div>
+      <div class="btn-row">
+        <button class="btn" onclick="saveExperiment()">保存记录</button>
+        <button class="btn secondary" onclick="reloadAll()">刷新</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn secondary" onclick="clearAllExperiments()" style="color:#E05C5C;border-color:#E05C5C;">清空全部记录</button>
+      </div>
+      <div class="muted" style="margin-top:8px;">数据保存在独立库：`backtest_experiments.db`</div>
+    </div>
+
+    <div>
+      <div class="cards">
+        <div class="card"><div class="k">记录总数</div><div class="v" id="s_count">-</div></div>
+        <div class="card"><div class="k">平均收益(%)</div><div class="v" id="s_avg_ret">-</div></div>
+        <div class="card"><div class="k">最佳收益(%)</div><div class="v" id="s_best_ret">-</div></div>
+        <div class="card"><div class="k">平均回撤(%)</div><div class="v" id="s_avg_mdd">-</div></div>
+      </div>
+
+      <div class="charts">
+        <div class="chart-box">
+          <h3>交易收益曲线（每笔交易一个点，按下方 split 明细点击联动）</h3>
+          <div class="chart-toolbar">
+            <button class="toolbar-btn" onclick="zoomIn()">放大</button>
+            <button class="toolbar-btn" onclick="zoomOut()">缩小</button>
+            <button class="toolbar-btn" onclick="zoomReset()">重置</button>
+            <label class="toolbar-check">
+              <input id="toggleTrades" type="checkbox" onchange="renderZoomedCurves()">
+              显示买卖点
+            </label>
+          </div>
+          <div class="range-row">
+            <label>起点</label>
+            <input id="rangeStart" type="range" min="0" max="0" value="0" oninput="onRangeChange()">
+            <label id="rangeStartLabel">0</label>
+          </div>
+          <div class="range-row">
+            <label>终点</label>
+            <input id="rangeEnd" type="range" min="1" max="1" value="1" oninput="onRangeChange()">
+            <label id="rangeEndLabel">1</label>
+          </div>
+          <canvas id="retLine"></canvas>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <colgroup>
+            <col style="width: 70px;">
+            <col style="width: 36%;">
+            <col style="width: 32%;">
+            <col style="width: 32%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>版本</th><th>参数</th><th>改动点（相对上次）</th><th>备注</th>
+            </tr>
+          </thead>
+          <tbody id="expBody"></tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <div class="muted" style="margin-bottom:8px;">版本详细记录（train/test/holdout）</div>
+        <table>
+          <thead>
+            <tr>
+              <th>split</th><th>收益%</th><th>回撤%</th><th>交易数</th><th>成交量(USD)</th><th>胜率%</th><th>Sharpe</th>
+            </tr>
+          </thead>
+          <tbody id="detailBody"></tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <div class="muted" style="margin-bottom:8px;">指标公式与含义（当前版本）</div>
+        <div id="formulaBox" style="white-space: pre-wrap; line-height: 1.6; font-size: 12px; color: var(--gray-5);">未填写</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    let lineChart = null;
+    let detailActiveExpId = null;
+    let latestRows = [];
+    let activeExpId = null;
+    let groupedVersions = [];
+    let curveLabels = [];
+    let curveEquity = [];
+    let curveDrawdown = [];
+    let curveTrades = [];
+    let zoomState = { start: 0, end: 0 };
+
+    function toNum(v) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    async function saveExperiment() {
+      const payload = {
+        experiment_name: document.getElementById('f_name').value.trim(),
+        strategy_version: document.getElementById('f_version').value.trim(),
+        split_name: document.getElementById('f_split').value,
+        total_return_pct: toNum(document.getElementById('f_ret').value),
+        max_drawdown_pct: toNum(document.getElementById('f_mdd').value),
+        trades: toNum(document.getElementById('f_trades').value),
+        trade_volume_usd: toNum(document.getElementById('f_volume').value),
+        win_rate_pct: toNum(document.getElementById('f_win').value),
+        sharpe: toNum(document.getElementById('f_sharpe').value),
+        direction: '',
+        change_summary: document.getElementById('f_change_summary').value.trim(),
+        param_summary: document.getElementById('f_param_summary').value.trim(),
+        notes: document.getElementById('f_notes').value.trim(),
+        tags: '',
+        metric_version: 'factor_detection_metric_library_v1',
+        metric_formula_text: document.getElementById('f_metric_formula_text').value.trim(),
+        params: {}
+      };
+      const rawMetrics = document.getElementById('f_metrics').value.trim();
+      if (rawMetrics) {
+        try { payload.metrics = JSON.parse(rawMetrics); }
+        catch (e) { alert('核心指标JSON格式错误'); return; }
+      } else {
+        payload.metrics = {};
+      }
+      const resp = await fetch('/api/backtest/experiments', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        alert(data.error || '保存失败');
+        return;
+      }
+      reloadAll();
+    }
+
+    async function clearAllExperiments() {
+      if (!confirm('确认清空全部实验记录？此操作不可恢复。')) return;
+      const resp = await fetch('/api/backtest/experiments/clear', { method: 'POST' });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        alert(data.error || '清空失败');
+        return;
+      }
+      activeExpId = null;
+      document.getElementById('detailBody').innerHTML = '';
+      document.getElementById('formulaBox').textContent = '未填写';
+      reloadAll();
+    }
+
+    function renderSummary(rows) {
+      const count = rows.length;
+      const rets = rows.map(r => Number(r.total_return_pct)).filter(v => Number.isFinite(v));
+      const mdds = rows.map(r => Number(r.max_drawdown_pct)).filter(v => Number.isFinite(v));
+      const avgRet = rets.length ? (rets.reduce((a,b) => a+b, 0) / rets.length) : null;
+      const bestRet = rets.length ? Math.max(...rets) : null;
+      const avgMdd = mdds.length ? (mdds.reduce((a,b) => a+b, 0) / mdds.length) : null;
+
+      document.getElementById('s_count').textContent = count;
+      const avgRetEl = document.getElementById('s_avg_ret');
+      avgRetEl.textContent = avgRet == null ? '-' : avgRet.toFixed(2);
+      avgRetEl.className = 'v ' + (avgRet > 0 ? 'pos' : 'neg');
+      const bestEl = document.getElementById('s_best_ret');
+      bestEl.textContent = bestRet == null ? '-' : bestRet.toFixed(2);
+      bestEl.className = 'v ' + (bestRet > 0 ? 'pos' : 'neg');
+      const mddEl = document.getElementById('s_avg_mdd');
+      mddEl.textContent = avgMdd == null ? '-' : avgMdd.toFixed(2);
+      mddEl.className = 'v ' + (avgMdd < -1 ? 'neg' : 'pos');
+    }
+
+    function renderTable(rows) {
+      const tbody = document.getElementById('expBody');
+      const sorted = [...rows].sort((a, b) => {
+        const an = (a.experiment_name || '');
+        const bn = (b.experiment_name || '');
+        if (an !== bn) return an.localeCompare(bn);
+        const at = a.created_at || '';
+        const bt = b.created_at || '';
+        if (at !== bt) return at.localeCompare(bt);
+        return (a.id || 0) - (b.id || 0);
+      });
+
+      function parseParams(r) {
+        if (!r || !r.params_json) return {};
+        try {
+          const obj = JSON.parse(r.params_json);
+          return obj && typeof obj === 'object' ? obj : {};
+        } catch {
+          return {};
+        }
+      }
+
+      function compactVersion(r) {
+        if (r.strategy_version && String(r.strategy_version).trim()) return String(r.strategy_version).trim();
+        if (!r.experiment_name) return '-';
+        return String(r.experiment_name).split('|')[0].trim();
+      }
+
+      function diffParams(prevObj, curObj) {
+        const keys = new Set([...Object.keys(prevObj || {}), ...Object.keys(curObj || {})]);
+        const changes = [];
+        for (const k of keys) {
+          const pv = prevObj ? prevObj[k] : undefined;
+          const cv = curObj ? curObj[k] : undefined;
+          if (JSON.stringify(pv) !== JSON.stringify(cv)) {
+            changes.push(`${k}: ${pv === undefined ? '∅' : pv} -> ${cv === undefined ? '∅' : cv}`);
+          }
+        }
+        return changes;
+      }
+
+      // 一行一个版本：将 train/test/holdout 合并
+      const grouped = new Map();
+      for (const r of sorted) {
+        const key = (r.experiment_name || '').replace(/\s*\|\s*(train|test|holdout)\s*$/i, '').trim() || compactVersion(r);
+        if (!grouped.has(key)) {
+          grouped.set(key, { key, train: null, test: null, holdout: null, any: r });
+        }
+        const g = grouped.get(key);
+        const s = (r.split_name || '').toLowerCase();
+        if (s === 'train') g.train = r;
+        else if (s === 'test') g.test = r;
+        else if (s === 'holdout') g.holdout = r;
+        if (!g.any || ((r.created_at || '') > (g.any.created_at || ''))) g.any = r;
+      }
+
+      const versions = Array.from(grouped.values()).sort((a, b) => {
+        const at = a.any?.created_at || '';
+        const bt = b.any?.created_at || '';
+        if (at !== bt) return at.localeCompare(bt);
+        return (a.any?.id || 0) - (b.any?.id || 0);
+      });
+
+      const versionRows = [];
+      let prevParams = {};
+      versions.forEach((g, idx) => {
+        const paramsObj = parseParams(g.any);
+        const diff = diffParams(prevParams, paramsObj);
+        prevParams = paramsObj;
+        versionRows.push({
+          versionNo: idx + 1,
+          paramsText: g.any?.param_summary || JSON.stringify(paramsObj),
+          changeText: diff.length ? diff.join('; ') : (g.any?.change_summary || g.any?.direction || '无变化'),
+          notesText: g.any?.notes || '',
+          clickId: g.holdout?.id || g.test?.id || g.train?.id || g.any?.id || null,
+          _groupKey: g.key,
+          _detail: g,
+        });
+      });
+
+      const latestFirst = [...versionRows].reverse();
+      latestRows = latestFirst;
+      groupedVersions = latestFirst;
+      tbody.innerHTML = latestFirst.map(r => `
+        <tr data-exp-id="${r.clickId || ''}" onclick="onSelectExperiment(${r.clickId || 'null'})">
+          <td>${r.versionNo}</td>
+          <td>${r.paramsText || ''}</td>
+          <td>${r.changeText || ''}</td>
+          <td>${r.notesText || ''}</td>
+        </tr>
+      `).join('');
+      refreshActiveRowStyle();
+      if (latestFirst.length && activeExpId == null) {
+        onSelectExperiment(latestFirst[0].clickId);
+      }
+    }
+
+    function refreshActiveRowStyle() {
+      document.querySelectorAll('#expBody tr').forEach(tr => {
+        const cur = tr.getAttribute('data-exp-id');
+        if (activeExpId != null && cur && Number(cur) === Number(activeExpId)) tr.classList.add('active-row');
+        else tr.classList.remove('active-row');
+      });
+    }
+
+    function syncRangeControls() {
+      const n = curveLabels.length;
+      const rs = document.getElementById('rangeStart');
+      const re = document.getElementById('rangeEnd');
+      const sl = document.getElementById('rangeStartLabel');
+      const el = document.getElementById('rangeEndLabel');
+      if (!n) {
+        rs.min = 0; rs.max = 0; rs.value = 0;
+        re.min = 0; re.max = 0; re.value = 0;
+        sl.textContent = '0'; el.textContent = '0';
+        return;
+      }
+      rs.min = 0; rs.max = n - 1; rs.value = zoomState.start;
+      re.min = 1; re.max = n; re.value = zoomState.end;
+      sl.textContent = String(zoomState.start);
+      el.textContent = String(zoomState.end);
+    }
+
+    function onRangeChange() {
+      const rs = document.getElementById('rangeStart');
+      const re = document.getElementById('rangeEnd');
+      let s = Number(rs.value);
+      let e = Number(re.value);
+      if (e <= s + 1) e = s + 1;
+      zoomState.start = Math.max(0, s);
+      zoomState.end = Math.min(curveLabels.length, e);
+      syncRangeControls();
+      renderZoomedCurves();
+    }
+
+    function renderZoomedCurves() {
+      if (!curveLabels.length) return;
+      const s = Math.max(0, Math.min(zoomState.start, curveLabels.length - 1));
+      const e = Math.max(s + 1, Math.min(zoomState.end, curveLabels.length));
+      const labels = curveLabels.slice(s, e);
+      const eq = curveEquity.slice(s, e);
+      const showTrades = document.getElementById('toggleTrades').checked;
+
+      const datasets = [{
+        label: 'equity',
+        data: eq,
+        borderColor: '#4FA8D7',
+        pointRadius: 0,
+        borderWidth: 1.5
+      }];
+
+      if (showTrades && curveTrades.length) {
+        const idxMap = new Map();
+        labels.forEach((x, i) => idxMap.set(String(x), i));
+        const visible = curveTrades
+          .map(t => ({...t, idx: idxMap.get(String(t.x))}))
+          .filter(t => t.idx !== undefined);
+
+        const cap = 300;
+        let filtered = visible;
+        if (visible.length > cap) {
+          const step = Math.ceil(visible.length / cap);
+          filtered = visible.filter((_, i) => i % step === 0);
+        }
+
+        const buys = filtered.filter(t => t.side === 'buy').map(t => ({x: t.idx, y: t.price}));
+        const sells = filtered.filter(t => t.side === 'sell').map(t => ({x: t.idx, y: t.price}));
+        if (buys.length) {
+          datasets.push({
+            type: 'scatter',
+            label: 'buy',
+            data: buys,
+            pointRadius: 2.5,
+            pointBackgroundColor: '#4CAF82',
+            pointBorderColor: '#4CAF82',
+            showLine: false
+          });
+        }
+        if (sells.length) {
+          datasets.push({
+            type: 'scatter',
+            label: 'sell',
+            data: sells,
+            pointRadius: 2.5,
+            pointBackgroundColor: '#E05C5C',
+            pointBorderColor: '#E05C5C',
+            showLine: false
+          });
+        }
+      }
+
+      if (lineChart) lineChart.destroy();
+      lineChart = new Chart(document.getElementById('retLine'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: { responsive: true, plugins: { legend: { labels: { color: '#bbb' } } }, scales: { x: { ticks: { color: '#888' } }, y: { ticks: { color: '#888' } } } }
+      });
+      syncRangeControls();
+    }
+
+    function zoomIn() {
+      if (!curveLabels.length) return;
+      const len = zoomState.end - zoomState.start;
+      if (len <= 20) return;
+      const shrink = Math.max(5, Math.floor(len * 0.15));
+      zoomState.start += Math.floor(shrink / 2);
+      zoomState.end -= Math.ceil(shrink / 2);
+      renderZoomedCurves();
+    }
+
+    function zoomOut() {
+      if (!curveLabels.length) return;
+      const len = zoomState.end - zoomState.start;
+      const expand = Math.max(5, Math.floor(len * 0.2));
+      zoomState.start = Math.max(0, zoomState.start - Math.floor(expand / 2));
+      zoomState.end = Math.min(curveLabels.length, zoomState.end + Math.ceil(expand / 2));
+      renderZoomedCurves();
+    }
+
+    function zoomReset() {
+      if (!curveLabels.length) return;
+      zoomState.start = 0;
+      zoomState.end = curveLabels.length;
+      renderZoomedCurves();
+    }
+
+    async function renderExperimentCurve(expId) {
+      if (!expId) return;
+      const resp = await fetch(`/api/backtest/experiments/${expId}/curve?mode=trade`);
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        alert(data.error || '未找到该实验对应曲线');
+        return;
+      }
+      const rows = data.data || [];
+      if (!rows.length) {
+        alert('该实验没有可展示的净值曲线数据');
+        return;
+      }
+      const labels = rows.map(r => {
+        const s = String(r.x || '');
+        // 统一显示到秒
+        if (s.length >= 19) return s.slice(0, 19).replace('T', ' ');
+        return s;
+      });
+      const eq = rows.map(r => Number(r.equity));
+      const dd = rows.map(r => Number(r.drawdown_pct));
+      const trades = (data.trades || []).map(t => ({x: t.x, price: Number(t.price), side: t.side})).filter(t => Number.isFinite(t.price) && t.x);
+      curveLabels = labels;
+      curveEquity = eq;
+      curveDrawdown = dd;
+      curveTrades = trades;
+      zoomState.start = 0;
+      zoomState.end = curveLabels.length;
+      renderZoomedCurves();
+    }
+
+    async function onSelectExperiment(expId) {
+      activeExpId = expId;
+      refreshActiveRowStyle();
+      renderVersionDetails(expId);
+      await renderExperimentCurve(expId);
+    }
+
+    function renderVersionDetails(expId) {
+      const detailBody = document.getElementById('detailBody');
+      const formulaBox = document.getElementById('formulaBox');
+      const hit = groupedVersions.find(v => Number(v.clickId) === Number(expId));
+      if (!hit || !hit._detail) {
+        detailBody.innerHTML = '';
+        formulaBox.textContent = '未填写';
+        return;
+      }
+      const order = ['train', 'test', 'holdout'];
+      const rows = order.map(s => hit._detail[s]).filter(Boolean);
+      if (!rows.length) {
+        detailBody.innerHTML = '';
+        formulaBox.textContent = '未填写';
+        return;
+      }
+      const fmt = (v, d=2) => (v == null || v === '' ? '' : Number(v).toFixed(d));
+      detailBody.innerHTML = rows.map(r => `
+        <tr data-exp-id="${r.id || ''}" onclick="onSelectDetail(${r.id || 'null'})">
+          <td>${r.split_name || ''}</td>
+          <td>${fmt(r.total_return_pct)}</td>
+          <td>${fmt(r.max_drawdown_pct)}</td>
+          <td>${r.trades == null ? '' : r.trades}</td>
+          <td>${fmt(r.trade_volume_usd, 0)}</td>
+          <td>${fmt(r.win_rate_pct)}</td>
+          <td>${fmt(r.sharpe, 3)}</td>
+        </tr>
+      `).join('');
+      formulaBox.textContent = hit._detail.any?.metric_formula_text || '未填写';
+      if (rows[0]?.id) onSelectDetail(rows[0].id);
+    }
+
+    async function onSelectDetail(expId) {
+      detailActiveExpId = expId;
+      await renderExperimentCurve(expId);
+      document.querySelectorAll('#detailBody tr').forEach(tr => {
+        const cur = Number(tr.getAttribute('data-exp-id'));
+        if (cur === Number(detailActiveExpId)) tr.classList.add('active-row');
+        else tr.classList.remove('active-row');
+      });
+    }
+
+    async function reloadAll() {
+      const resp = await fetch('/api/backtest/experiments?limit=2000');
+      const data = await resp.json();
+      const rows = data.data || [];
+      renderSummary(rows);
+      renderTable(rows);
+    }
+
+    reloadAll();
+  </script>
+</body>
+</html>
