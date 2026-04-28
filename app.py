@@ -809,28 +809,64 @@ def _read_trade_events_csv(csv_path: str) -> list[dict]:
     return events
 
 
-def _read_trade_curve_csv(csv_path: str) -> list[dict]:
-    """按交易笔数构建收益曲线（每笔交易一个点）"""
-    rows = []
-    with open(csv_path, "r", encoding="utf-8") as f:
+def _read_trade_curve_csv(trade_csv_path: str, equity_csv_path: str | None = None, initial_capital: float | None = None) -> list[dict]:
+    """按交易笔数构建收益曲线（每笔交易一个点）。
+
+    优先使用组合净值曲线在交易退出时刻的净值，避免直接连乘交易收益带来的口径偏差。
+    """
+    trade_rows = []
+    with open(trade_csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for r in reader:
-            rt = _safe_float(r.get("return_pct"))
             et = r.get("exit_time") or r.get("entry_time") or r.get("time")
-            if rt is None or not et:
+            if not et:
                 continue
-            rows.append({"time": et, "ret_pct": rt})
-    if not rows:
+            trade_rows.append({"time": et})
+    if not trade_rows:
         return []
-    equity = 1.0
+
+    eq_index = {}
+    first_curve_eq = None
+    if equity_csv_path and os.path.exists(equity_csv_path):
+        with open(equity_csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                x = r.get("minute") or r.get("date") or r.get("ts") or r.get("time")
+                eq = _safe_float(r.get("equity"))
+                if not x or eq is None:
+                    continue
+                # minute-level key
+                key = str(x)[:16]
+                eq_index[key] = eq
+                if first_curve_eq is None:
+                    first_curve_eq = eq
+
     out = []
-    peak = equity
-    for i, r in enumerate(rows, start=1):
-        equity *= (1.0 + r["ret_pct"] / 100.0)
-        if equity > peak:
-            peak = equity
-        dd = (equity / peak - 1.0) * 100.0 if peak > 0 else 0.0
-        out.append({"x": r["time"], "equity": equity, "drawdown_pct": dd, "trade_idx": i})
+    peak = None
+    last_eq = None
+    first_eq = None
+    if initial_capital is not None:
+        first_eq = float(initial_capital)
+    elif first_curve_eq is not None:
+        first_eq = first_curve_eq
+
+    if first_eq is not None and trade_rows:
+        out.append({"x": f"{trade_rows[0]['time']} [start]", "equity": first_eq, "drawdown_pct": 0.0, "trade_idx": 0})
+        peak = first_eq
+
+    for i, tr in enumerate(trade_rows, start=1):
+        key = str(tr["time"])[:16]
+        eq = eq_index.get(key, last_eq)
+        if eq is None:
+            # 找不到映射时跳过，避免引入错误口径
+            continue
+        last_eq = eq
+        if first_eq is None:
+            first_eq = eq
+        if peak is None or eq > peak:
+            peak = eq
+        dd = (eq / peak - 1.0) * 100.0 if peak and peak > 0 else 0.0
+        out.append({"x": tr["time"], "equity": eq, "drawdown_pct": dd, "trade_idx": i})
     return out
 
 
@@ -904,12 +940,16 @@ def api_backtest_experiment_curve(exp_id: int):
                 else:
                     trade_candidates.append(os.path.join(report_root, source_trade_csv))
 
+            init_cap = _safe_float(params_obj.get("total_nominal_capital_usd"))
+            if init_cap is None:
+                init_cap = _safe_float(params_obj.get("initial_capital_normalized"))
+
             trades = []
             trade_curve = []
             for tc in trade_candidates:
                 if os.path.exists(tc):
                     trades = _read_trade_events_csv(tc)
-                    trade_curve = _read_trade_curve_csv(tc)
+                    trade_curve = _read_trade_curve_csv(tc, c, init_cap)
                     if trades or trade_curve:
                         break
 

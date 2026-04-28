@@ -117,16 +117,15 @@
     </div>
 
     <div>
-      <div class="cards">
-        <div class="card"><div class="k">记录总数</div><div class="v" id="s_count">-</div></div>
-        <div class="card"><div class="k">平均收益(%)</div><div class="v" id="s_avg_ret">-</div></div>
-        <div class="card"><div class="k">最佳收益(%)</div><div class="v" id="s_best_ret">-</div></div>
-        <div class="card"><div class="k">平均回撤(%)</div><div class="v" id="s_avg_mdd">-</div></div>
+      <div class="cards" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="card"><div class="k">总收益(%)</div><div class="v" id="k_total_ret">-</div></div>
+        <div class="card"><div class="k">最大回撤(%)</div><div class="v" id="k_mdd">-</div></div>
+        <div class="card"><div class="k">成交量(USD)</div><div class="v" id="k_volume">-</div></div>
       </div>
 
       <div class="charts">
         <div class="chart-box">
-          <h3>交易收益曲线（每笔交易一个点，按下方 split 明细点击联动）</h3>
+          <h3>每笔交易净值曲线（按下方 split 明细点击联动）</h3>
           <div class="chart-toolbar">
             <button class="toolbar-btn" onclick="zoomIn()">放大</button>
             <button class="toolbar-btn" onclick="zoomOut()">缩小</button>
@@ -256,24 +255,22 @@
       reloadAll();
     }
 
-    function renderSummary(rows) {
-      const count = rows.length;
-      const rets = rows.map(r => Number(r.total_return_pct)).filter(v => Number.isFinite(v));
-      const mdds = rows.map(r => Number(r.max_drawdown_pct)).filter(v => Number.isFinite(v));
-      const avgRet = rets.length ? (rets.reduce((a,b) => a+b, 0) / rets.length) : null;
-      const bestRet = rets.length ? Math.max(...rets) : null;
-      const avgMdd = mdds.length ? (mdds.reduce((a,b) => a+b, 0) / mdds.length) : null;
+    function renderKpiFromRecord(r) {
+      const ret = toNum(r?.total_return_pct);
+      const mdd = toNum(r?.max_drawdown_pct);
+      const vol = toNum(r?.trade_volume_usd);
 
-      document.getElementById('s_count').textContent = count;
-      const avgRetEl = document.getElementById('s_avg_ret');
-      avgRetEl.textContent = avgRet == null ? '-' : avgRet.toFixed(2);
-      avgRetEl.className = 'v ' + (avgRet > 0 ? 'pos' : 'neg');
-      const bestEl = document.getElementById('s_best_ret');
-      bestEl.textContent = bestRet == null ? '-' : bestRet.toFixed(2);
-      bestEl.className = 'v ' + (bestRet > 0 ? 'pos' : 'neg');
-      const mddEl = document.getElementById('s_avg_mdd');
-      mddEl.textContent = avgMdd == null ? '-' : avgMdd.toFixed(2);
-      mddEl.className = 'v ' + (avgMdd < -1 ? 'neg' : 'pos');
+      const retEl = document.getElementById('k_total_ret');
+      retEl.textContent = ret == null ? '-' : ret.toFixed(2);
+      retEl.className = 'v ' + (ret != null && ret >= 0 ? 'pos' : 'neg');
+
+      const mddEl = document.getElementById('k_mdd');
+      mddEl.textContent = mdd == null ? '-' : mdd.toFixed(2);
+      mddEl.className = 'v ' + (mdd != null && mdd < 0 ? 'neg' : 'pos');
+
+      const volEl = document.getElementById('k_volume');
+      volEl.textContent = vol == null ? '-' : vol.toFixed(0);
+      volEl.className = 'v neu';
     }
 
     function renderTable(rows) {
@@ -411,6 +408,7 @@
       renderZoomedCurves();
     }
 
+
     function renderZoomedCurves() {
       if (!curveLabels.length) return;
       const s = Math.max(0, Math.min(zoomState.start, curveLabels.length - 1));
@@ -471,7 +469,14 @@
       lineChart = new Chart(document.getElementById('retLine'), {
         type: 'line',
         data: { labels, datasets },
-        options: { responsive: true, plugins: { legend: { labels: { color: '#bbb' } } }, scales: { x: { ticks: { color: '#888' } }, y: { ticks: { color: '#888' } } } }
+        options: {
+          responsive: true,
+          plugins: { legend: { labels: { color: '#bbb' } } },
+          scales: {
+            x: { ticks: { color: '#888' } },
+            y: { ticks: { color: '#888' }, title: { display: true, text: '净值(USD)', color: '#888' } }
+          }
+        }
       });
       syncRangeControls();
     }
@@ -515,13 +520,13 @@
         alert('该实验没有可展示的净值曲线数据');
         return;
       }
-      const labels = rows.map(r => {
+      const labels = rows.map((r, i) => {
         const s = String(r.x || '');
         // 统一显示到秒
-        if (s.length >= 19) return s.slice(0, 19).replace('T', ' ');
-        return s;
+        const base = s.length >= 19 ? s.slice(0, 19).replace('T', ' ') : s;
+        return `${base} #${i}`;
       });
-      const eq = rows.map(r => Number(r.equity));
+      const eq = rows.map(r => Number(r.equity ?? 0));
       const dd = rows.map(r => Number(r.drawdown_pct));
       const trades = (data.trades || []).map(t => ({x: t.x, price: Number(t.price), side: t.side})).filter(t => Number.isFinite(t.price) && t.x);
       curveLabels = labels;
@@ -547,6 +552,7 @@
       if (!hit || !hit._detail) {
         detailBody.innerHTML = '';
         formulaBox.textContent = '未填写';
+        renderKpiFromRecord(null);
         return;
       }
       const order = ['train', 'test', 'holdout'];
@@ -554,6 +560,7 @@
       if (!rows.length) {
         detailBody.innerHTML = '';
         formulaBox.textContent = '未填写';
+        renderKpiFromRecord(null);
         return;
       }
       const fmt = (v, d=2) => (v == null || v === '' ? '' : Number(v).toFixed(d));
@@ -574,6 +581,13 @@
 
     async function onSelectDetail(expId) {
       detailActiveExpId = expId;
+      const hit = groupedVersions.find(v => v._detail && ['train','test','holdout'].some(s => Number(v._detail[s]?.id) === Number(expId)));
+      if (hit) {
+        const rec = ['train','test','holdout'].map(s => hit._detail[s]).find(x => Number(x?.id) === Number(expId));
+        renderKpiFromRecord(rec || null);
+      } else {
+        renderKpiFromRecord(null);
+      }
       await renderExperimentCurve(expId);
       document.querySelectorAll('#detailBody tr').forEach(tr => {
         const cur = Number(tr.getAttribute('data-exp-id'));
@@ -586,7 +600,6 @@
       const resp = await fetch('/api/backtest/experiments?limit=2000');
       const data = await resp.json();
       const rows = data.data || [];
-      renderSummary(rows);
       renderTable(rows);
     }
 
