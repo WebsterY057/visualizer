@@ -10,6 +10,10 @@ import sqlite3
 import json
 import os
 import csv
+import re
+import urllib.request
+import urllib.error
+import importlib.util
 from flask import Flask, request, render_template, jsonify
 from datetime import datetime, timedelta
 
@@ -571,6 +575,18 @@ def api_sql_query():
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
 
+        if re.match(r'^\s*PRAGMA\s+', sql, re.I):
+            cur.execute(sql)
+            rows = cur.fetchall()
+            cols = [c[0] for c in cur.description] if cur.description else []
+            data = [dict(zip(cols, row)) for row in rows]
+            conn.close()
+            total = len(data)
+            return json.dumps(
+                {'success': True, 'data': data, 'total': total, 'page': 1, 'pages': 1},
+                ensure_ascii=False,
+            ), 200, {'Content-Type': 'application/json'}
+
         sql_for_count = re.sub(r'\bLIMIT\s+\d+\s*(OFFSET\s+\d+)?$', '', sql, flags=re.IGNORECASE).strip()
         count_sql = f"SELECT COUNT(*) FROM ({sql_for_count}) AS _t"
         cur.execute(count_sql)
@@ -620,6 +636,174 @@ def api_sql_query():
     except Exception as e:
         return json.dumps({'error': str(e)}), 500, {'Content-Type': 'application/json'}
 
+
+def _load_visualizer_config():
+    """与 app.py 同目录的 config.py（含 MiniMax 等）。"""
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.py')
+    spec = importlib.util.spec_from_file_location('viz_cfg_query', cfg_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _query_schema_snippet_for_nl(db_path, table_hint=None, max_chars=14000):
+    """为 NL→SQL 拼一段精简 schema（表名 + 列名:类型）。"""
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    )
+    tables = [r[0] for r in cur.fetchall()]
+    if table_hint and table_hint in tables:
+        tables = [table_hint]
+    lines = []
+    used = 0
+    for t in tables:
+        try:
+            cur.execute(f'PRAGMA table_info({_q(t)})')
+            cols = [f'{r[1]}:{r[2] or "ANY"}' for r in cur.fetchall()]
+        except Exception:
+            cols = []
+        line = f'Table "{t}": ' + ', '.join(cols[:48])
+        if len(cols) > 48:
+            line += ' ...'
+        line += '\n'
+        if used + len(line) > max_chars:
+            lines.append('... (more tables omitted) ...\n')
+            break
+        lines.append(line)
+        used += len(line)
+    conn.close()
+    return ''.join(lines)
+
+
+def _sanitize_nl_generated_sql(raw):
+    """只允许单条 SELECT / WITH … SELECT / PRAGMA table_info。返回 (sql, err)。"""
+    s = (raw or '').strip()
+    m = re.search(r'```(?:sql)?\s*([\s\S]*?)```', s, re.I)
+    if m:
+        s = m.group(1).strip()
+    if not s:
+        return None, '模型返回为空'
+    parts = [p.strip() for p in s.split(';') if p.strip()]
+    if len(parts) != 1:
+        return None, '仅允许单条 SQL（不能包含多条以分号分隔的语句）'
+    s = parts[0]
+    if re.match(r'^\s*PRAGMA\s+', s, re.I):
+        if not re.match(r'^\s*PRAGMA\s+table_info\b', s, re.I):
+            return None, '仅允许 PRAGMA table_info'
+        return s, None
+    if re.search(
+        r'^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|ATTACH|DETACH|REPLACE|CREATE|TRUNCATE|VACUUM|REINDEX)\b',
+        s,
+        re.I,
+    ):
+        return None, '仅允许只读查询（SELECT / WITH / PRAGMA table_info）'
+    if not re.match(r'^\s*(WITH\b|SELECT\b)', s, re.I):
+        return None, '必须以 WITH 或 SELECT 开头'
+    return s, None
+
+
+def _minimax_chat_to_text(user_content, system_content):
+    cfg = _load_visualizer_config()
+    api_key = (getattr(cfg, 'MINIMAX_API_KEY', None) or os.environ.get('MINIMAX_API_KEY', '')).strip()
+    if not api_key:
+        raise RuntimeError('未配置 MINIMAX_API_KEY（可在 visualizer/config.py 或环境变量中设置）')
+    base = (getattr(cfg, 'MINIMAX_BASE_URL', None) or 'https://api.minimax.chat/v1').rstrip('/')
+    if base.endswith('/v1'):
+        url = f'{base}/text/chatcompletion_v2'
+    else:
+        url = f'{base}/v1/text/chatcompletion_v2'
+    model = getattr(cfg, 'MINIMAX_MODEL', None) or 'MiniMax-M2.7'
+    body = {
+        'model': model,
+        'messages': [
+            {'role': 'system', 'name': 'MiniMax AI', 'content': system_content},
+            {'role': 'user', 'name': 'user', 'content': user_content},
+        ],
+        'temperature': 0.05,
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
+        headers={
+            'Content-Type': 'application/json; charset=utf-8',
+            'Authorization': f'Bearer {api_key}',
+        },
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            raw = resp.read().decode('utf-8', errors='replace')
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode('utf-8', errors='replace')[:2000]
+        raise RuntimeError(f'MiniMax HTTP {e.code}: {err_body}') from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f'网络错误: {e.reason}') from e
+    data = json.loads(raw)
+    br = data.get('base_resp') or {}
+    if br.get('status_code') not in (0, None, '0'):
+        raise RuntimeError(br.get('status_msg') or str(data)[:2000])
+    choices = data.get('choices') or []
+    if not choices:
+        raise RuntimeError(f'模型无 choices 返回: {str(data)[:1500]}')
+    msg = choices[0].get('message') or {}
+    text = (msg.get('content') or '').strip()
+    if not text:
+        text = (msg.get('reasoning_content') or '').strip()
+    return text
+
+
+@app.route('/api/query/nl_to_sql', methods=['POST'])
+def api_query_nl_to_sql():
+    """
+    数据查询 Tab：自然语言 → SQLite SQL（仅 SELECT / WITH / PRAGMA table_info）。
+    使用 config.py 中 MiniMax；未配置 key 时返回 503。
+    """
+    body = request.json or {}
+    db_key = (body.get('db') or '').strip()
+    question = (body.get('question') or '').strip()
+    table_hint = (body.get('table') or '').strip() or None
+
+    if not db_key or db_key not in QUERY_DATABASES:
+        return jsonify({'success': False, 'error': '请选择有效的数据库（数据查询范围内的库）'}), 400
+    if not question:
+        return jsonify({'success': False, 'error': '请输入自然语言描述'}), 400
+
+    db_path = QUERY_DATABASES[db_key]['path']
+    if not os.path.isfile(db_path):
+        return jsonify({'success': False, 'error': f'数据库文件不存在: {db_path}'}), 404
+
+    try:
+        schema = _query_schema_snippet_for_nl(db_path, table_hint=table_hint)
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'读取 schema 失败: {e}'}), 500
+
+    sys_prompt = (
+        '你是 SQLite 只读查询助手。用户库为中文表名/列名很常见，表名含非 ASCII 时必须用双引号包裹，'
+        '如 SELECT * FROM "跨所汇总" LIMIT 20。'
+        '只输出一条可执行语句：允许 WITH…SELECT、SELECT、或 PRAGMA table_info("表名")；'
+        '禁止 INSERT/UPDATE/DELETE/DROP/ALTER/ATTACH 及多条语句。'
+        '默认加 LIMIT 200 防止大表拖垮。不要 Markdown，不要解释。'
+    )
+    user_blob = (
+        f'当前库表结构摘要：\n{schema}\n\n'
+        f'用户需求：{question}\n'
+    )
+    if table_hint:
+        user_blob += f'（用户已选中表 "{table_hint}"，优先使用该表）\n'
+
+    try:
+        raw = _minimax_chat_to_text(user_blob, sys_prompt)
+    except RuntimeError as e:
+        return jsonify({'success': False, 'error': str(e)}), 503
+
+    sql, err = _sanitize_nl_generated_sql(raw)
+    if err:
+        return jsonify({'success': False, 'error': err, 'raw': raw[:4000]}), 400
+    return jsonify({'success': True, 'sql': sql, 'raw_preview': raw[:500]})
+
+
 @app.route('/api/nl_query', methods=['POST'])
 def api_nl_query():
     """自然语言转SQL查询"""
@@ -638,6 +822,7 @@ def api_nl_query():
         'orders_bigcoin': 'k1_订单数据_',
         'summary': '',
         'k1k2_token': '',
+        'backtest': '',
     }
     if db_key not in DATABASES:
         db_key = 'orders_k12'
