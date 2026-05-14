@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+app.log
+*.db
+*.json
+!package.json
+.env
+venv/
+.venv/

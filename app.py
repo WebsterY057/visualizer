@@ -4,6 +4,8 @@ K12 可视化分析平台
 访问地址: http://localhost:5050
 """
 
+import logging
+logger = logging.getLogger(__name__)
 import sqlite3
 import json
 import os
@@ -15,23 +17,28 @@ app = Flask(__name__)
 app.template_folder = 'templates'
 app.static_folder = 'static'
 
-DB_PATH = '/Users/yy/.hermes/workspace/db/analysis.db'
-ORDERS_DB_PATH = '/Users/yy/.hermes/workspace/db/orders.db'
+ORDERS_K12_PATH = '/Users/yy/.hermes/workspace/db/orders_k12.db'
+ORDERS_TURTLE_PATH = '/Users/yy/.hermes/workspace/db/orders_turtle.db'
+ORDERS_BIGCOIN_PATH = '/Users/yy/.hermes/workspace/db/orders_bigcoin.db'
 SUMMARY_DB_PATH = '/Users/yy/.hermes/workspace/db/summary.db'
 BACKTEST_DB_PATH = '/Users/yy/.hermes/workspace/db/backtest_experiments.db'
+SERVER_BACKTEST_DB_PATH = '/Users/yy/.hermes/workspace/db/backtest_server.db'
 BACKTEST_REPORT_ROOT = '/Users/yy/.hermes/workspace/db/回测项目/量价关系信号_alpha市场/报告'
 MAX_ROWS = 50000
 
 DATABASES = {
-    'analysis': {'name': '分析数据库', 'path': DB_PATH},
-    'orders': {'name': '订单数据库', 'path': ORDERS_DB_PATH},
-    'summary': {'name': '汇总数据库', 'path': SUMMARY_DB_PATH},
+    'orders_k12':    {'name': 'K12订单数据库',    'path': ORDERS_K12_PATH},
+    'orders_turtle': {'name': '小乌龟订单数据库', 'path': ORDERS_TURTLE_PATH},
+    'orders_bigcoin':{'name': '大币订单数据库',  'path': ORDERS_BIGCOIN_PATH},
+    'summary':       {'name': '汇总数据库',       'path': SUMMARY_DB_PATH},
 }
 
 # 启动时扫描所有表所在的数据库，建立映射
 TABLE_TO_DB = {}
 for db_key, db_info in DATABASES.items():
     try:
+        if not os.path.exists(db_info['path']):
+            continue
         conn = sqlite3.connect(db_info['path'])
         cur = conn.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -94,40 +101,33 @@ def init_backtest_db():
 
 def get_db_path(table=None, db=None):
     """根据表名或数据库参数选择数据库"""
-    if db == 'orders':
-        return ORDERS_DB_PATH
-    if db == 'analysis':
-        return DB_PATH
-    if db == 'summary':
-        return SUMMARY_DB_PATH
-    if table and table.startswith('orders'):
-        return ORDERS_DB_PATH
-    # 自动判断：查表名映射
+    if db and db in DATABASES:
+        return DATABASES[db]['path']
     if table and table in TABLE_TO_DB:
         db_key = TABLE_TO_DB[table]
-        if db_key == 'orders':
-            return ORDERS_DB_PATH
-        if db_key == 'analysis':
-            return DB_PATH
-        if db_key == 'summary':
-            return SUMMARY_DB_PATH
-    return DB_PATH
+        if db_key in DATABASES:
+            return DATABASES[db_key]['path']
+        if db_key == 'backtest':
+            return BACKTEST_DB_PATH
+    return SUMMARY_DB_PATH
 
 # ============================================================
 # 数据库查询
 # ============================================================
 
+def _q(t):
+    """SQLite表名引号转义（支持含破折号的表名）"""
+    return f'"{t}"'
+
 def get_tables_meta(db_name=None):
     """获取所有表及其字段信息，可按数据库过滤"""
     meta = {}
-    if db_name == 'orders':
-        db_paths = [ORDERS_DB_PATH]
-    elif db_name == 'summary':
-        db_paths = [SUMMARY_DB_PATH]
-    elif db_name == 'analysis':
-        db_paths = [DB_PATH]
+    if db_name and db_name in DATABASES:
+        db_paths = [DATABASES[db_name]['path']]
+    elif db_name:
+        db_paths = []
     else:
-        db_paths = [DB_PATH, ORDERS_DB_PATH, SUMMARY_DB_PATH]
+        db_paths = [v['path'] for v in DATABASES.values()]
     db_key = db_name if db_name else 'all'
 
     for db_path in db_paths:
@@ -137,7 +137,7 @@ def get_tables_meta(db_name=None):
         tables = [r[0] for r in cur.fetchall()]
 
         for t in tables:
-            cur.execute(f"PRAGMA table_info({t})")
+            cur.execute(f"PRAGMA table_info({_q(t)})")
             cols = [{'name': c[1], 'type': c[2]} for c in cur.fetchall()]
             col_names = [c['name'] for c in cols]
 
@@ -145,7 +145,7 @@ def get_tables_meta(db_name=None):
             for dc in ['date', 'Date', 'created_at']:
                 if dc in col_names:
                     try:
-                        cur.execute(f"SELECT MIN({dc}), MAX({dc}) FROM {t} WHERE {dc} IS NOT NULL")
+                        cur.execute(f"SELECT MIN({dc}), MAX({dc}) FROM {_q(t)} WHERE {dc} IS NOT NULL")
                         r = cur.fetchone()
                         if r and r[0]:
                             date_range = [r[0], r[1]]
@@ -153,14 +153,16 @@ def get_tables_meta(db_name=None):
                     except:
                         pass
 
-            cur.execute(f"SELECT COUNT(*) FROM {t}")
+            cur.execute(f"SELECT COUNT(*) FROM {_q(t)}")
             count = cur.fetchone()[0]
+            # 找到这个db_path对应的DATABASES key
+            db_key_for_path = next((k for k, v in DATABASES.items() if v['path'] == db_path), db_key)
             meta[t] = {
                 'columns': cols,
                 'date_range': date_range,
                 'row_count': count,
-                'db': 'analysis' if db_path == DB_PATH else ('orders' if db_path == ORDERS_DB_PATH else 'summary'),
-                'db_name': DATABASES['analysis']['name'] if db_path == DB_PATH else (DATABASES['orders']['name'] if db_path == ORDERS_DB_PATH else DATABASES['summary']['name'])
+                'db': db_key_for_path,
+                'db_name': DATABASES.get(db_key_for_path, {}).get('name', db_key_for_path)
             }
         conn.close()
     return meta
@@ -188,7 +190,7 @@ def query_data(table, x_field, y_fields, date_from=None, date_to=None, group_by=
         table_cols = {}
         for t in tables:
             try:
-                cur.execute(f"PRAGMA table_info({t})")
+                cur.execute(f"PRAGMA table_info({_q(t)})")
                 table_cols[t] = [c[1] for c in cur.fetchall()]
             except:
                 table_cols[t] = []
@@ -291,11 +293,12 @@ def query_data(table, x_field, y_fields, date_from=None, date_to=None, group_by=
 
             where_parts = []
             params_t = []
+            date_expr = f"SUBSTR({date_col},1,10)"
             if date_from:
-                where_parts.append(f"{date_col} >= ?")
+                where_parts.append(f"{date_expr} >= ?")
                 params_t.append(date_from)
             if date_to:
-                where_parts.append(f"{date_col} <= ?")
+                where_parts.append(f"{date_expr} <= ?")
                 params_t.append(date_to)
             if filters:
                 for col, val in filters.items():
@@ -307,13 +310,13 @@ def query_data(table, x_field, y_fields, date_from=None, date_to=None, group_by=
             select_sql = ", ".join(select_fields_t)
             if group_by:
                 group_expr = field_map[y_fields[0]][t] if y_fields and t in field_map.get(y_fields[0], {}) else '1'
-                sql = f"SELECT {select_sql}, SUM({group_expr}) as _val FROM {t} WHERE {where_sql} GROUP BY {group_by}, {date_col} ORDER BY {group_by}, {date_col} LIMIT {MAX_ROWS}"
+                sql = f"SELECT {select_sql}, SUM({group_expr}) as _val FROM {_q(t)} WHERE {where_sql} GROUP BY {date_expr}, {group_expr} ORDER BY {date_expr}, {group_expr} LIMIT {MAX_ROWS}"
             elif filters and any(v and v != 'all' for v in filters.values()):
-                agg_fields = [date_col] + [f"SUM({c}) as {c}" for c in actual_cols_t]
-                sql = f"SELECT {', '.join(agg_fields)} FROM {t} WHERE {where_sql} GROUP BY {date_col} ORDER BY {date_col} LIMIT {MAX_ROWS}"
+                agg_fields = [f"{date_expr} as {date_col}"] + [f"SUM({c}) as {c}" for c in actual_cols_t]
+                sql = f"SELECT {', '.join(agg_fields)} FROM {_q(t)} WHERE {where_sql} GROUP BY {date_expr} ORDER BY {date_expr} LIMIT {MAX_ROWS}"
             else:
-                agg_fields = [date_col] + [f"SUM({c}) as {c}" for c in actual_cols_t]
-                sql = f"SELECT {', '.join(agg_fields)} FROM {t} WHERE {where_sql} GROUP BY {date_col} ORDER BY {date_col} LIMIT {MAX_ROWS}"
+                agg_fields = [f"{date_expr} as {date_col}"] + [f"SUM({c}) as {c}" for c in actual_cols_t]
+                sql = f"SELECT {', '.join(agg_fields)} FROM {_q(t)} WHERE {where_sql} GROUP BY {date_expr} ORDER BY {date_expr} LIMIT {MAX_ROWS}"
             print(f"[DEBUG] SQL for {t}: {sql}, params={params_t}")
             # 使用该表自己的连接
             cur_t = table_conns[t]['cur']
@@ -375,17 +378,19 @@ def query_data(table, x_field, y_fields, date_from=None, date_to=None, group_by=
     if x_field == 'date' and date_col and date_col != 'date':
         x_field = date_col
 
-    select_fields = [x_field] + list(y_fields)
+    date_expr = f"SUBSTR({date_col},1,10)" if date_col else date_col
+    # SELECT字段中，日期列用date_expr（去掉时间），其他字段原样
+    select_fields = [f"{date_expr} as {x_field}" if x_field == date_col else x_field] + list(y_fields)
     select_fields_sql = ", ".join(select_fields)
 
     where_clauses = []
     params = []
 
     if date_from and date_col:
-        where_clauses.append(f"{date_col} >= ?")
+        where_clauses.append(f"{date_expr} >= ?")
         params.append(date_from)
     if date_to and date_col:
-        where_clauses.append(f"{date_col} <= ?")
+        where_clauses.append(f"{date_expr} <= ?")
         params.append(date_to)
 
     if filters:
@@ -403,12 +408,12 @@ def query_data(table, x_field, y_fields, date_from=None, date_to=None, group_by=
         # 找出有筛选值的维度列，按x_field和这些维度列聚合
         active_dim_cols = [col for col, val in filters.items() if val and val != 'all']
         if active_dim_cols:
-            group_cols = f"{x_field}, {', '.join(active_dim_cols)}"
-            sql = f"SELECT {group_cols}, " + ", ".join([f"SUM({f}) as {f}" for f in y_fields]) + f" FROM {table} WHERE {where_sql} GROUP BY {group_cols} ORDER BY {x_field} LIMIT {MAX_ROWS}"
+            group_cols = f"{date_expr}, {', '.join(active_dim_cols)}"
+            sql = f"SELECT {group_cols}, " + ", ".join([f"SUM({f}) as {f}" for f in y_fields]) + f" FROM {table} WHERE {where_sql} GROUP BY {group_cols} ORDER BY {date_expr} LIMIT {MAX_ROWS}"
         else:
-            sql = f"SELECT {select_fields_sql} FROM {table} WHERE {where_sql} ORDER BY {x_field} LIMIT {MAX_ROWS}"
+            sql = f"SELECT {select_fields_sql} FROM {table} WHERE {where_sql} ORDER BY {date_expr} LIMIT {MAX_ROWS}"
     else:
-        sql = f"SELECT {select_fields_sql} FROM {table} WHERE {where_sql} ORDER BY {x_field} LIMIT {MAX_ROWS}"
+        sql = f"SELECT {select_fields_sql} FROM {table} WHERE {where_sql} ORDER BY {date_expr} LIMIT {MAX_ROWS}"
 
     cur.execute(sql, params)
     rows = cur.fetchall()
@@ -434,7 +439,7 @@ def get_date_range(table, db=None):
     """获取表的最大最小日期"""
     conn = sqlite3.connect(get_db_path(table, db))
     cur = conn.cursor()
-    cur.execute(f"PRAGMA table_info({table})")
+    cur.execute(f"PRAGMA table_info({_q(table)})")
     col_names = [c[1] for c in cur.fetchall()]
     for dc in ['date', 'Date', 'created_at']:
         if dc in col_names:
@@ -529,6 +534,282 @@ def api_query():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/sql_query', methods=['POST'])
+def api_sql_query():
+    """执行原始SQL查询"""
+    body = request.json
+    sql = body.get('sql', '').strip()
+    db_key = body.get('db')
+    page = body.get('page', 1)
+    page_size = body.get('page_size', 100)
+
+    if not sql:
+        return jsonify({'error': 'SQL不能为空'}), 400
+
+    db_path = get_db_path(db=db_key)
+
+    import re
+    limit_match = re.search(r'\bLIMIT\s+(\d+)\s*(OFFSET\s+\d+)?$', sql, re.IGNORECASE)
+    has_limit = limit_match is not None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        sql_for_count = re.sub(r'\bLIMIT\s+\d+\s*(OFFSET\s+\d+)?$', '', sql, flags=re.IGNORECASE).strip()
+        count_sql = f"SELECT COUNT(*) FROM ({sql_for_count}) AS _t"
+        cur.execute(count_sql)
+        total = cur.fetchone()[0]
+
+        offset = (page - 1) * page_size
+        if has_limit:
+            paginated_sql = sql
+        else:
+            paginated_sql = f"{sql} LIMIT {page_size} OFFSET {offset}"
+        cur.execute(paginated_sql)
+        rows = cur.fetchall()
+
+        cols = [c[0] for c in cur.description] if cur.description else []
+
+        time_candidates = ['时间', 'date', 'Date', '时间戳', 'created_at', 'updated_at']
+        time_col = next((c for c in cols if c in time_candidates), None)
+
+        data = [dict(zip(cols, row)) for row in rows]
+
+        def _round(v):
+            if isinstance(v, float):
+                return round(v, 4)
+            if isinstance(v, str):
+                try:
+                    f = float(v)
+                    return round(f, 4)
+                except:
+                    return v
+            return v
+
+        ordered_data = []
+        for row in data:
+            reordered = {}
+            if time_col and time_col in row:
+                reordered[time_col] = row[time_col]
+            for k, v in row.items():
+                if k != time_col:
+                    reordered[k] = _round(v)
+            ordered_data.append(reordered)
+
+        data = ordered_data
+
+        conn.close()
+        pages = (total + page_size - 1) // page_size
+        return json.dumps({'success': True, 'data': data, 'total': total, 'page': page, 'pages': pages}, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+    except Exception as e:
+        return json.dumps({'error': str(e)}), 500, {'Content-Type': 'application/json'}
+
+@app.route('/api/nl_query', methods=['POST'])
+def api_nl_query():
+    """自然语言转SQL查询"""
+    body = request.json
+    query = body.get('query', '').strip()
+    db_key = body.get('db', 'orders_k12')
+
+    if not query:
+        return jsonify({'error': '查询内容不能为空'}), 400
+
+    import re
+
+    db_map = {
+        'orders_k12': {'name': 'orders_k12', 'prefix': 'k1_订单数据_', 'db_path': '/Users/yy/.hermes/workspace/db/orders_k12.db'},
+        'orders_turtle': {'name': 'orders_turtle', 'prefix': 'guik1_订单数据_', 'db_path': '/Users/yy/.hermes/workspace/db/orders_turtle.db'},
+        'orders_bigcoin': {'name': 'orders_bigcoin', 'prefix': 'k1_订单数据_', 'db_path': '/Users/yy/.hermes/workspace/db/orders_bigcoin.db'},
+    }
+
+    current_db = db_map.get(db_key, db_map['orders_k12'])
+    db_path = current_db['db_path']
+    prefix = current_db['prefix']
+
+    date_pattern = re.findall(r'(\d{1,2})[月\.\-](\d{1,2})', query)
+    date_str = None
+    date_range = None
+    if date_pattern and ('到' in query or '-' in query or '~' in query):
+        if '到' in query or '~' in query:
+            parts = re.split(r'[到~\-]', query)
+            m1 = re.findall(r'(\d{1,2})[月\.\-](\d{1,2})', parts[0])
+            m2 = re.findall(r'(\d{1,2})[月\.\-](\d{1,2})', parts[1] if len(parts) > 1 else parts[0])
+            if m1 and m2:
+                d1 = f'2026-{m1[0][0].zfill(2)}-{m1[0][1].zfill(2)}'
+                d2 = f'2026-{m2[0][0].zfill(2)}-{m2[0][1].zfill(2)}'
+                date_range = (d1, d2)
+        elif len(date_pattern) >= 2:
+            d1 = f'2026-{date_pattern[0][0].zfill(2)}-{date_pattern[0][1].zfill(2)}'
+            d2 = f'2026-{date_pattern[1][0].zfill(2)}-{date_pattern[1][1].zfill(2)}'
+            date_range = (d1, d2)
+    elif date_pattern:
+        month, day = date_pattern[0]
+        date_str = f'2026-{month.zfill(2)}-{day.zfill(2)}'
+    else:
+        date_match = re.findall(r'(\d{4})[月\.\-](\d{1,2})[月\.\-](\d{1,2})', query)
+        if date_match:
+            date_str = f'{date_match[0][0]}-{date_match[0][1].zfill(2)}-{date_match[0][2].zfill(2)}'
+
+    token_match = re.search(r'([A-Za-z0-9_]+(?:>USDT|USDT>)?)', query)
+    if token_match:
+        sym = token_match.group(1).lower()
+        if sym in ['k1', 'k2', 'guik1', 'guik2', 'bigcoin', 'turtle']:
+            token_match = None
+
+    q = query.lower()
+
+    is_count = ('多少' in query or '数量' in query) and '每笔' not in query
+    is_sum = '总' in query and ('金额' in query or '成交' in query or '交易' in query)
+    select_all = '全部' in query or '所有' in query
+
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+
+    tables = []
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    for row in cur.fetchall():
+        tables.append(row[0])
+
+    target_tables = []
+    if date_range:
+        d1, d2 = date_range
+        for t in tables:
+            if prefix not in t:
+                continue
+            tbl_date_match = re.search(r'(\d{4})[-_]?(\d{2})[-_]?(\d{2})', t)
+            if tbl_date_match:
+                tbl_date = f'{tbl_date_match.group(1)}-{tbl_date_match.group(2)}-{tbl_date_match.group(3)}'
+                if d1 <= tbl_date <= d2:
+                    target_tables.append(t)
+        target_tables.sort()
+    elif date_str:
+        candidate = f'{prefix}{date_str}'
+        if candidate in tables:
+            target_tables = [candidate]
+        else:
+            for t in tables:
+                if date_str.replace('-', '_') in t or date_str.replace('-', '') in t:
+                    target_tables = [t]
+                    break
+
+    if not target_tables and token_match:
+        for t in sorted(tables, reverse=True):
+            if prefix in t:
+                target_tables = [t]
+                break
+
+    if not target_tables:
+        for t in sorted(tables, reverse=True):
+            if prefix in t:
+                target_tables = [t]
+                break
+
+    if not target_tables:
+        conn.close()
+        return jsonify({'error': f'未找到相关表，可用: {", ".join(tables[:5])}...'}), 400
+
+    cur.execute(f"PRAGMA table_info({target_tables[0]})")
+    cols = [c[1] for c in cur.fetchall()]
+
+    time_col = next((c for c in cols if c in ['时间', 'date', 'Date']), None)
+    hash_col = next((c for c in cols if 'hash' in c.lower() or 'Hash' in c), None)
+    pnl_col = next((c for c in cols if '盈亏' in c or 'pnl' in c.lower()), None)
+    amount_col = next((c for c in cols if '金额' in c or 'notional' in c.lower() or 'volume' in c.lower()), None)
+    token_col = next((c for c in cols if '交易对' in c and '类型' not in c), None)
+    dir_col = next((c for c in cols if '方向' in c), None)
+    status_col = next((c for c in cols if '状态' in c), None)
+
+    select_cols = []
+    if select_all:
+        select_cols = cols
+    else:
+        if time_col:
+            select_cols.append(time_col)
+        if 'hash' in q or '交易hash' in query or 'tx' in q:
+            if hash_col:
+                select_cols.append(hash_col)
+        if '盈亏' in query or '利润' in query or 'profit' in q:
+            if pnl_col:
+                select_cols.append(pnl_col)
+        if '金额' in query or 'notional' in q:
+            if amount_col:
+                select_cols.append(amount_col)
+        if '交易对' in query or 'symbol' in q:
+            if token_col:
+                select_cols.append(token_col)
+        if '方向' in query or '买' in query or '卖' in query:
+            if dir_col:
+                select_cols.append(dir_col)
+        if '状态' in query:
+            if status_col:
+                select_cols.append(status_col)
+        if not select_cols:
+            if time_col:
+                select_cols.append(time_col)
+            if hash_col:
+                select_cols.append(hash_col)
+            if pnl_col:
+                select_cols.append(pnl_col)
+            if token_col:
+                select_cols.append(token_col)
+
+    where_parts = []
+    if token_match and token_col:
+        token_sym = token_match.group(1).upper().replace('>', '_')
+        where_parts.append(f"{token_col} LIKE '%{token_sym}%'")
+    if date_str and time_col:
+        where_parts.append(f"{time_col} LIKE '{date_str}%'")
+    where_clause = ' WHERE ' + ' AND '.join(where_parts) if where_parts else ''
+
+    if is_count:
+        if len(target_tables) == 1:
+            sql = f'SELECT COUNT(*) FROM {target_tables[0]}{where_clause}'
+        else:
+            subqs = [f'SELECT COUNT(*) FROM {t}{where_clause}' for t in target_tables]
+            sql = 'SELECT SUM(_c) FROM (' + ' UNION ALL '.join(subqs) + ') AS _t'
+    elif is_sum and amount_col:
+        if len(target_tables) == 1:
+            sql = f'SELECT SUM({amount_col}) FROM {target_tables[0]}{where_clause}'
+        else:
+            subqs = [f'SELECT SUM({amount_col}) FROM {t}{where_clause}' for t in target_tables]
+            sql = 'SELECT SUM(_s) FROM (' + ' UNION ALL '.join(subqs) + ') AS _t'
+    else:
+        if not select_cols:
+            select_cols = [time_col] if time_col else [cols[0]]
+        cols_str = ', '.join(select_cols)
+        if len(target_tables) == 1:
+            sql = f'SELECT {cols_str} FROM {target_tables[0]}{where_clause}'
+        else:
+            subqs = [f'SELECT {cols_str} FROM {t}{where_clause}' for t in target_tables]
+            sql = ' UNION ALL '.join(subqs) + ' ORDER BY 时间 LIMIT 100'
+
+    if not (is_count or is_sum) and len(target_tables) == 1:
+        sql += ' LIMIT 100'
+
+    try:
+        cur.execute(sql)
+        rows = cur.fetchall()
+        result_cols = [c[0] for c in cur.description] if cur.description else select_cols
+        data = [dict(zip(result_cols, row)) for row in rows]
+        for row in data:
+            for k, v in row.items():
+                if isinstance(v, str):
+                    try:
+                        row[k] = round(float(v), 4)
+                    except:
+                        pass
+        conn.close()
+        return json.dumps({'success': True, 'sql': sql, 'data': data, 'count': len(data)}, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+    except Exception as e:
+        conn.close()
+        return json.dumps({'error': f'SQL执行失败: {str(e)}\nSQL: {sql}'}), 400, {'Content-Type': 'application/json'}
+
+@app.route('/api/nl_matrix', methods=['POST'])
+def api_nl_matrix():
+    """自然语言转矩阵查询"""
+    return jsonify({'error': '矩阵查询功能待实现'}), 501
+
 @app.route('/api/values/<table>/<field>')
 def api_values(table, field):
     """获取某字段的不重复值"""
@@ -581,6 +862,105 @@ def api_heatmap():
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return jsonify(rows)
+
+
+# ─────────────────────────────────────────────────────────────
+# 数据分析默认图表：K12 vs 小乌龟每日盈亏对比
+# ─────────────────────────────────────────────────────────────
+
+@app.route('/api/pnl_compare')
+def api_pnl_compare():
+    """K12 vs 小乌龟每日盈亏对比，数据分析页面默认图表"""
+    try:
+        date_from = request.args.get('date_from', '')
+        date_to = request.args.get('date_to', '')
+        db_path = SUMMARY_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        if date_from and date_to:
+            cur.execute("""
+                SELECT
+                    SUBSTR(j.日期,1,10) as 日期,
+                    COALESCE(j.今日总盈亏_跨12, 0) as k12_pnl,
+                    COALESCE(g.今日总盈亏_龟12, 0) as turtle_pnl,
+                    COALESCE(j.捆绑费_跨12, 0) as k12_bundle_fee,
+                    COALESCE(g.捆绑费_龟12, 0) as turtle_bundle_fee,
+                    COALESCE(j.今日总gas费_跨12, 0) as k12_gas_fee,
+                    COALESCE(g.今日总gas费_龟12, 0) as turtle_gas_fee,
+                    COALESCE(j.订单量_跨12, 0) as k12_orders,
+                    COALESCE(g.订单量_龟12, 0) as turtle_orders,
+                    COALESCE(j.总交易量_跨12, 0) as k12_volume,
+                    COALESCE(g.总交易量_龟12, 0) as turtle_volume,
+                    COALESCE(j.alpha利润_跨12, 0) as k12_alpha,
+                    COALESCE(g.alpha利润_龟12, 0) as turtle_alpha
+                FROM 跨所汇总 j
+                LEFT JOIN 小乌龟汇总 g ON SUBSTR(j.日期,1,10) = g.日期
+                WHERE SUBSTR(j.日期,1,10) >= ? AND SUBSTR(j.日期,1,10) <= ?
+                ORDER BY j.日期
+            """, (date_from, date_to))
+        else:
+            cur.execute("""
+                SELECT
+                    SUBSTR(j.日期,1,10) as 日期,
+                    COALESCE(j.今日总盈亏_跨12, 0) as k12_pnl,
+                    COALESCE(g.今日总盈亏_龟12, 0) as turtle_pnl,
+                    COALESCE(j.捆绑费_跨12, 0) as k12_bundle_fee,
+                    COALESCE(g.捆绑费_龟12, 0) as turtle_bundle_fee,
+                    COALESCE(j.今日总gas费_跨12, 0) as k12_gas_fee,
+                    COALESCE(g.今日总gas费_龟12, 0) as turtle_gas_fee,
+                    COALESCE(j.订单量_跨12, 0) as k12_orders,
+                    COALESCE(g.订单量_龟12, 0) as turtle_orders,
+                    COALESCE(j.总交易量_跨12, 0) as k12_volume,
+                    COALESCE(g.总交易量_龟12, 0) as turtle_volume,
+                    COALESCE(j.alpha利润_跨12, 0) as k12_alpha,
+                    COALESCE(g.alpha利润_龟12, 0) as turtle_alpha
+                FROM 跨所汇总 j
+                LEFT JOIN 小乌龟汇总 g ON SUBSTR(j.日期,1,10) = g.日期
+                ORDER BY j.日期 DESC LIMIT 30
+            """)
+
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'data': rows})
+    except Exception as e:
+        logger.error(f"api_pnl_compare failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────
+# 回测实验列表（简化版，供前端backtest列表页调用）
+# ─────────────────────────────────────────────────────────────
+
+@app.route('/api/backtest/list')
+def api_backtest_list():
+    """回测实验列表，兼容前端旧调用方式"""
+    try:
+        db_path = BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 编号 as id, 创建时间 as created_at, 实验名 as experiment_name,
+                   策略版本 as strategy_version, 数据集 as split_name,
+                   总收益率 as total_return_pct, 最大回撤 as max_drawdown_pct,
+                   交易次数 as trades, 胜率 as win_rate_pct, 夏普比率 as sharpe,
+                   成交量USD as trade_volume, 净利润 as net_profit, 方向 as direction,
+                   改动点 as change_summary, 参数摘要 as param_summary,
+                   标签 as tags, 备注 as notes
+            FROM backtest_experiments
+            WHERE 来源='本地'
+            ORDER BY CAST(SUBSTR(LOWER(策略版本), 2) AS INTEGER) DESC, 编号 DESC
+            LIMIT 200
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        logger.error(f"api_backtest_list failed: {e}")
+        return jsonify([]), 500
+
 
 @app.route('/api/daily', methods=['POST'])
 def api_daily():
@@ -655,10 +1035,16 @@ def api_backtest_experiments():
 
     where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
     sql = f"""
-        SELECT *
+        SELECT 编号 as id, 创建时间 as created_at, 实验名 as experiment_name,
+               策略版本 as strategy_version, 数据集 as split_name,
+               总收益率 as total_return_pct, 最大回撤 as max_drawdown_pct,
+               交易次数 as trades, 胜率 as win_rate_pct, 夏普比率 as sharpe,
+               成交量USD as trade_volume, 净利润 as net_profit, 成交额比率 as profit_per_volume,
+               方向 as direction, 改动点 as change_summary, 参数摘要 as param_summary,
+               标签 as tags, 备注 as notes, 来源 as source
         FROM backtest_experiments
         {where_sql}
-        ORDER BY datetime(created_at) DESC, id DESC
+        ORDER BY CAST(SUBSTR(LOWER(策略版本), 2) AS INTEGER) DESC, 编号 DESC
         LIMIT ?
     """
     params.append(limit)
@@ -764,6 +1150,169 @@ def api_backtest_clear_experiments():
     conn.commit()
     conn.close()
     return jsonify({"success": True, "deleted": deleted})
+
+
+@app.route('/api/trade_records', methods=['GET'])
+def api_trade_records():
+    """获取交易记录，支持过滤"""
+    token = request.args.get('token')
+    period = request.args.get('period')
+    strategy_version = request.args.get('strategy_version')
+    trade_type = request.args.get('trade_type')
+    min_vol = request.args.get('min_vol', type=float)
+    max_vol = request.args.get('max_vol', type=float)
+    min_volatility = request.args.get('min_volatility', type=float)
+    max_volatility = request.args.get('max_volatility', type=float)
+    min_return = request.args.get('min_return', type=float)
+    max_return = request.args.get('max_return', type=float)
+    exit_reason = request.args.get('exit_reason')
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 100, type=int)
+
+    conn = sqlite3.connect(BACKTEST_DB_PATH)
+    cur = conn.cursor()
+
+    conditions = []
+    params = []
+
+    if token:
+        conditions.append("token = ?")
+        params.append(token)
+    if period:
+        conditions.append("period = ?")
+        params.append(period)
+    if strategy_version:
+        conditions.append("strategy_version = ?")
+        params.append(strategy_version)
+    if trade_type:
+        conditions.append("trade_type = ?")
+        params.append(trade_type)
+    if min_vol is not None:
+        conditions.append("notional_usd >= ?")
+        params.append(min_vol)
+    if max_vol is not None:
+        conditions.append("notional_usd <= ?")
+        params.append(max_vol)
+    if min_volatility is not None:
+        conditions.append("atr_pct_14 >= ?")
+        params.append(min_volatility)
+    if max_volatility is not None:
+        conditions.append("atr_pct_14 <= ?")
+        params.append(max_volatility)
+    if min_return is not None:
+        conditions.append("return_pct >= ?")
+        params.append(min_return)
+    if max_return is not None:
+        conditions.append("return_pct <= ?")
+        params.append(max_return)
+    if exit_reason:
+        conditions.append("exit_reason = ?")
+        params.append(exit_reason)
+
+    where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+    count_sql = f"SELECT COUNT(*) FROM trade_records WHERE {where_clause}"
+    cur.execute(count_sql, params)
+    total = cur.fetchone()[0]
+
+    offset = (page - 1) * page_size
+    data_sql = f"""
+        SELECT * FROM trade_records
+        WHERE {where_clause}
+        ORDER BY entry_time DESC
+        LIMIT ? OFFSET ?
+    """
+    cur.execute(data_sql, params + [page_size, offset])
+    columns = [c[0] for c in cur.description]
+    rows = cur.fetchall()
+    conn.close()
+
+    data = [dict(zip(columns, row)) for row in rows]
+
+    for row in data:
+        row['trend_up'] = bool(row.get('trend_up', 0))
+
+    pages = (total + page_size - 1) // page_size
+
+    return json.dumps({
+        "success": True,
+        "data": data,
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "columns": columns
+    }, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+
+
+@app.route('/api/trade_records/summary', methods=['GET'])
+def api_trade_records_summary():
+    """获取交易记录汇总统计"""
+    token = request.args.get('token')
+    period = request.args.get('period')
+    strategy_version = request.args.get('strategy_version')
+
+    conn = sqlite3.connect(BACKTEST_DB_PATH)
+    cur = conn.cursor()
+
+    conditions = []
+    params = []
+
+    if token:
+        conditions.append("token = ?")
+        params.append(token)
+    if period:
+        conditions.append("period = ?")
+        params.append(period)
+    if strategy_version:
+        conditions.append("strategy_version = ?")
+        params.append(strategy_version)
+
+    where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+    sql = f"""
+        SELECT
+            COUNT(*) as total_trades,
+            SUM(CASE WHEN trade_type = 'buy' THEN 1 ELSE 0 END) as buy_trades,
+            SUM(CASE WHEN trade_type = 'sell' THEN 1 ELSE 0 END) as sell_trades,
+            AVG(notional_usd) as avg_notional,
+            AVG(atr_pct_14) as avg_volatility,
+            AVG(quote_volume) as avg_quote_volume,
+            AVG(participation_rate) as avg_participation,
+            AVG(trend_spread) as avg_trend_spread,
+            AVG(return_pct) as avg_return,
+            SUM(CASE WHEN return_pct > 0 THEN 1 ELSE 0 END) * 1.0 / NULLIF(SUM(CASE WHEN trade_type = 'sell' THEN 1 ELSE 0 END), 0) as win_rate,
+            AVG(holding_bars) as avg_holding_bars,
+            MIN(entry_time) as first_entry,
+            MAX(entry_time) as last_entry
+        FROM trade_records
+        WHERE {where_clause} AND trade_type = 'sell'
+    """
+
+    cur.execute(sql, params)
+    row = cur.fetchone()
+    conn.close()
+
+    if row:
+        return json.dumps({
+            "success": True,
+            "data": {
+                "total_trades": row[0] or 0,
+                "buy_trades": row[1] or 0,
+                "sell_trades": row[2] or 0,
+                "avg_notional": round(row[3] or 0, 2),
+                "avg_volatility": round(row[4] or 0, 4),
+                "avg_quote_volume": round(row[5] or 0, 2),
+                "avg_participation": round(row[6] or 0, 4),
+                "avg_trend_spread": round(row[7] or 0, 6),
+                "avg_return": round(row[8] or 0, 4),
+                "win_rate": round(row[9] or 0, 4),
+                "avg_holding_bars": round(row[10] or 0, 2),
+                "first_entry": row[11],
+                "last_entry": row[12],
+            }
+        }, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
+    else:
+        return json.dumps({"success": True, "data": None}), 200, {'Content-Type': 'application/json'}
 
 
 def _safe_float(v):
@@ -962,6 +1511,391 @@ def api_backtest_experiment_curve(exp_id: int):
                 return jsonify({"success": True, "source": c, "mode": "bar", "data": data, "trades": trades})
 
     return jsonify({"error": "未找到该实验对应的净值曲线文件", "candidates": dedup}), 404
+
+
+# ─────────────────────────────────────────────────────────────
+# 服务器回测专用端点（过滤 来源='服务器'）
+# ─────────────────────────────────────────────────────────────
+
+@app.route('/backtest_analysis')
+def backtest_analysis():
+    return render_template('backtest_analysis.html')
+def api_server_backtest_list():
+    try:
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 编号 as id, 创建时间 as created_at, 实验名 as experiment_name,
+                   策略版本 as strategy_version, 数据集 as split_name,
+                   总收益率 as total_return_pct, 最大回撤 as max_drawdown_pct,
+                   交易次数 as trades, 胜率 as win_rate_pct, 夏普比率 as sharpe,
+                   成交量USD as trade_volume, 净利润 as net_profit, 成交额比率 as profit_per_volume,
+                   方向 as direction,
+                   改动点 as change_summary, 参数摘要 as param_summary,
+                   标签 as tags, 备注 as notes
+            FROM backtest_experiments
+            WHERE 来源='服务器'
+              AND (LOWER(数据集) = 'train' OR LOWER(数据集) LIKE 'train_%' OR LOWER(数据集) LIKE 'test_%' OR LOWER(数据集) = 'holdout' OR LOWER(数据集) LIKE 'holdout_%' OR LOWER(数据集) LIKE 'alpha_%')
+            ORDER BY CAST(SUBSTR(LOWER(策略版本), 2) AS INTEGER) DESC, 创建时间 DESC
+            LIMIT 100
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        logger.error(f"服务器回测列表查询失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server_backtest/experiments')
+def api_server_backtest_experiments():
+    try:
+        limit = request.args.get('limit', 100, type=int)
+        experiment_name = request.args.get('experiment', None)
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        where_clause = """WHERE 来源='服务器' AND (LOWER(数据集) = 'train' OR LOWER(数据集) LIKE 'train_%' OR LOWER(数据集) LIKE 'test_%' OR LOWER(数据集) = 'holdout' OR LOWER(数据集) LIKE 'holdout_%' OR LOWER(数据集) LIKE 'alpha_%')"""
+        params = [limit]
+
+        if experiment_name:
+            where_clause += " AND 实验名 LIKE ?"
+            params = [f"%{experiment_name}%", limit]
+
+        cur.execute(f"""
+            SELECT 编号 as id, 创建时间 as created_at, 实验名 as experiment_name,
+                   策略版本 as strategy_version, 数据集 as split_name,
+                   总收益率 as total_return_pct, 最大回撤 as max_drawdown_pct,
+                   交易次数 as trades, 胜率 as win_rate_pct, 夏普比率 as sharpe,
+                   成交量USD as trade_volume_usd, 净利润 as net_profit,
+                   成交额比率 as profit_per_volume, 方向 as direction,
+                   改动点 as change_summary, 参数摘要 as param_summary,
+                   标签 as tags, 备注 as notes, 参数JSON as params_json
+            FROM backtest_experiments
+            {where_clause}
+            ORDER BY CAST(SUBSTR(LOWER(策略版本), 2) AS INTEGER) DESC, 编号 DESC
+            LIMIT ?
+        """, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify({'data': rows, 'success': True})
+    except Exception as e:
+        logger.error(f"服务器回测实验列表查询失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/server_backtest/detail/<int:exp_id>')
+def api_server_backtest_detail(exp_id):
+    try:
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT e.编号 as id, e.实验名 as experiment_name, e.策略版本 as strategy_version,
+                   e.数据集 as split_name, e.总收益率 as total_return_pct,
+                   e.最大回撤 as max_drawdown_pct, e.夏普比率 as sharpe,
+                   e.胜率 as win_rate_pct, e.交易次数 as trades,
+                   e.成交量USD as trade_volume_usd, e.净利润 as net_profit,
+                   e.成交额比率 as profit_per_volume, e.方向 as direction,
+                   e.标签 as tags, e.备注 as notes, e.来源 as source,
+                   e.参数JSON as params_json
+            FROM backtest_experiments e
+            WHERE e.编号 = ? AND e.来源='服务器'
+        """, (exp_id,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'error': '实验不存在'}), 404
+        return jsonify(dict(row))
+    except Exception as e:
+        logger.error(f"服务器回测详情查询失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server_backtest/equity_curves/<int:exp_id>')
+def api_server_backtest_equity_curves(exp_id):
+    try:
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT bar_index, timestamp, equity, position, price, cash, drawdown
+            FROM equity_curves
+            WHERE exp_id = ? AND 来源='服务器'
+            ORDER BY bar_index
+        """, (exp_id,))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify({'data': rows})
+    except Exception as e:
+        logger.error(f"服务器净值曲线查询失败: {e}")
+        return jsonify({'data': [], 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/equity_curves/<int:exp_id>')
+def api_backtest_equity_curves(exp_id):
+    try:
+        db_path = BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT bar_index, timestamp, equity, position, price, cash, drawdown
+            FROM equity_curves
+            WHERE exp_id = ? AND 来源='本地'
+            ORDER BY bar_index
+        """, (exp_id,))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify({'data': rows})
+    except Exception as e:
+        logger.error(f"本地净值曲线查询失败: {e}")
+        return jsonify({'data': [], 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/detail/<int:exp_id>')
+def api_backtest_detail(exp_id):
+    try:
+        conn = sqlite3.connect(BACKTEST_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 编号 as id, 创建时间 as created_at, 实验名 as experiment_name,
+                   策略版本 as strategy_version, 数据集 as split_name,
+                   总收益率 as total_return_pct, 最大回撤 as max_drawdown_pct,
+                   交易次数 as trades, 胜率 as win_rate_pct, 夏普比率 as sharpe,
+                   成交量USD as trade_volume, 净利润 as net_profit, 成交额比率 as profit_per_volume,
+                   方向 as direction, 改动点 as change_summary, 参数摘要 as param_summary,
+                   标签 as tags, 备注 as notes, 来源 as source
+            FROM backtest_experiments
+            WHERE 编号 = ? AND 来源='本地'
+        """, (exp_id,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'error': '实验不存在'}), 404
+        return jsonify(dict(row))
+    except Exception as e:
+        logger.error(f"本地回测详情查询失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/backtest/tokens/<int:exp_id>')
+def api_backtest_tokens(exp_id):
+    try:
+        conn = sqlite3.connect(BACKTEST_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT token FROM bar_data
+            WHERE exp_id = ?
+            ORDER BY token
+        """, (exp_id,))
+        rows = [r[0] for r in cur.fetchall()]
+        conn.close()
+        return jsonify({'data': rows})
+    except Exception as e:
+        return jsonify({'data': [], 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/bar_data/<int:exp_id>')
+def api_backtest_bar_data(exp_id):
+    try:
+        token = request.args.get('token', None)
+        conn = sqlite3.connect(BACKTEST_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        if token:
+            cur.execute("""
+                SELECT bar_index, timestamp, open, high, low, close, volume,
+                       quote_volume, trades, signal
+                FROM bar_data
+                WHERE exp_id = ? AND token = ?
+                ORDER BY bar_index
+            """, (exp_id, token))
+        else:
+            cur.execute("""
+                SELECT token, bar_index, timestamp, open, high, low, close, volume,
+                       quote_volume, trades, signal
+                FROM bar_data
+                WHERE exp_id = ?
+                ORDER BY token, bar_index
+            """, (exp_id,))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify({'data': rows})
+    except Exception as e:
+        logger.error(f"bar_data查询失败: {e}")
+        return jsonify({'data': [], 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/trade_markers/<int:exp_id>')
+def api_backtest_trade_markers(exp_id):
+    try:
+        token = request.args.get('token', None)
+        conn = sqlite3.connect(BACKTEST_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        if token:
+            cur.execute("""
+                SELECT id, token, timestamp, signal_type, price, quantity,
+                       notional_usd, side, exit_reason
+                FROM trade_markers
+                WHERE exp_id = ? AND token = ?
+                ORDER BY timestamp
+            """, (exp_id, token))
+        else:
+            cur.execute("""
+                SELECT id, token, timestamp, signal_type, price, quantity,
+                       notional_usd, side, exit_reason
+                FROM trade_markers
+                WHERE exp_id = ?
+                ORDER BY token, timestamp
+            """, (exp_id,))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify({'data': rows})
+    except Exception as e:
+        logger.error(f"trade_markers查询失败: {e}")
+        return jsonify({'data': [], 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/trade_markers/<int:exp_id>')
+def api_backtest_trade_markers_v2(exp_id):
+    return jsonify({'data': []})
+
+
+@app.route('/api/server_backtest/tokens/<int:exp_id>')
+def api_server_backtest_tokens(exp_id):
+    try:
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT token FROM backtest_token_stats
+            WHERE exp_id = ? AND 来源='服务器'
+        """, (exp_id,))
+        rows = [r[0] for r in cur.fetchall()]
+        conn.close()
+        return jsonify({'data': rows})
+    except Exception as e:
+        return jsonify({'data': [], 'error': str(e)}), 500
+
+
+@app.route('/api/server_backtest/bar_data/<int:exp_id>')
+def api_server_backtest_bar_data(exp_id):
+    try:
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT token, bar_index, timestamp, open, high, low, close, volume
+            FROM backtest_bar_data
+            WHERE exp_id = ? AND 来源='服务器'
+            ORDER BY token, bar_index
+        """, (exp_id,))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server_backtest/trade_markers/<int:exp_id>')
+def api_server_backtest_trade_markers(exp_id):
+    try:
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT token, trade_index, bar_index, timestamp, side, size, price,
+                   pnl, cum_pnl, spread, execution_duration_ms
+            FROM backtest_trade_markers
+            WHERE exp_id = ? AND 来源='服务器'
+            ORDER BY token, trade_index
+        """, (exp_id,))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server_backtest/heatmap', methods=['POST'])
+def api_server_backtest_heatmap():
+    try:
+        metric = request.json.get('metric', 'total_return_pct')
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(f"""
+            SELECT 策略版本 as strategy_version, 数据集 as split_name,
+                   {metric} as value
+            FROM backtest_experiments
+            WHERE 来源='服务器'
+              AND (LOWER(数据集) = 'train' OR LOWER(数据集) LIKE 'train_%' OR LOWER(数据集) LIKE 'test_%' OR LOWER(数据集) = 'holdout' OR LOWER(数据集) LIKE 'holdout_%')
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        logger.error(f"服务器热力图查询失败: {e}")
+        return jsonify([]), 500
+
+
+@app.route('/api/server_backtest/grid/<grid_ver>')
+def api_server_backtest_grid(grid_ver):
+    try:
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM backtest_grid_results WHERE 策略版本=? AND 来源='服务器'", (grid_ver,))
+        rows = [dict(r) for r in cur.fetchall()]
+        if not rows:
+            conn.close()
+            return jsonify({'data': [], 'params': {}})
+        import json as _json
+        params_raw = rows[0].get('参数JSON') or rows[0].get('params_json') or '{}'
+        try:
+            params = _json.loads(params_raw)
+        except:
+            params = {}
+        conn.close()
+        return jsonify({'data': rows, 'params': params})
+    except Exception as e:
+        return jsonify({'data': [], 'params': {}, 'error': str(e)}), 500
+
+
+@app.route('/api/server_backtest/delete/<int:exp_id>', methods=['DELETE'])
+def api_server_backtest_delete(exp_id):
+    try:
+        db_path = SERVER_BACKTEST_DB_PATH
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT 编号 FROM backtest_experiments WHERE 编号=? AND 来源='服务器'", (exp_id,))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({'error': '实验不存在或无权删除'}), 404
+        cur.execute("DELETE FROM backtest_experiments WHERE 编号=?", (exp_id,))
+        cur.execute("DELETE FROM equity_curves WHERE exp_id=?", (exp_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"服务器回测删除失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     init_backtest_db()

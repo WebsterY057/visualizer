@@ -128,12 +128,13 @@
     <h1>跨所可视化分析平台</h1>
   </div>
   <div class="top-tabs">
-    <a class="top-tab active" href="/">数据分析</a>
-    <a class="top-tab" href="/backtest">回测实验</a>
+    <a class="top-tab active" href="/" onclick="showTab('analysis', this); return false;">数据分析</a>
+    <a class="top-tab" href="/backtest" onclick="showTab('backtest', this); return false;">回测实验</a>
+    <a class="top-tab" href="#" onclick="showTab('tradeAnalysis', this); return false;">交易分析</a>
   </div>
 </div>
 
-<div class="main">
+<div class="main" id="analysisPanel" style="display:flex;">
   <!-- ========== 左侧控制面板 ========== -->
   <div class="sidebar">
 
@@ -258,6 +259,101 @@
     </div>
   </div>
 </div>
+
+<!-- ========== 交易分析面板 ========== -->
+<div id="tradeAnalysisPanel" style="display:none; width:100%; padding: 20px;">
+  <div style="display:grid; grid-template-columns: 320px 1fr; gap: 14px; min-height: calc(100vh - 80px);">
+    <div>
+      <div class="panel-section">
+        <div class="panel-title">过滤器</div>
+        <div class="ctrl-group">
+          <label class="ctrl-label">Token</label>
+          <input id="taToken" type="text" placeholder="如 ALPHA_41USDT">
+        </div>
+        <div class="ctrl-group">
+          <label class="ctrl-label">周期</label>
+          <select id="taPeriod">
+            <option value="">全部</option>
+            <option value="train">训练集</option>
+            <option value="test">测试集</option>
+            <option value="holdout">Holdout</option>
+          </select>
+        </div>
+        <div class="ctrl-group">
+          <label class="ctrl-label">策略版本</label>
+          <input id="taVersion" type="text" placeholder="如 V28">
+        </div>
+        <div class="ctrl-group">
+          <label class="ctrl-label">Exit Reason</label>
+          <select id="taExitReason">
+            <option value="">全部</option>
+            <option value="signal">Signal</option>
+            <option value="stop_loss">Stop Loss</option>
+            <option value="take_profit">Take Profit</option>
+            <option value="queue_full">Queue Full</option>
+            <option value="trend_reversal">Trend Reversal</option>
+            <option value="timeout">Timeout</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div class="ctrl-group">
+            <label class="ctrl-label">最小波动率</label>
+            <input id="taMinVol" type="number" step="0.001" placeholder="0">
+          </div>
+          <div class="ctrl-group">
+            <label class="ctrl-label">最大波动率</label>
+            <input id="taMaxVol" type="number" step="0.001" placeholder="1">
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+          <div class="ctrl-group">
+            <label class="ctrl-label">最小收益%</label>
+            <input id="taMinReturn" type="number" step="0.01" placeholder="-100">
+          </div>
+          <div class="ctrl-group">
+            <label class="ctrl-label">最大收益%</label>
+            <input id="taMaxReturn" type="number" step="0.01" placeholder="100">
+          </div>
+        </div>
+        <div class="ctrl-group" style="margin-top:12px;">
+          <label class="ctrl-label">排序字段</label>
+          <select id="taSortField">
+            <option value="entry_time">入场时间</option>
+            <option value="return_pct">收益率</option>
+            <option value="atr_pct_14">波动率</option>
+            <option value="holding_bars">持仓Bar数</option>
+            <option value="queue_size">队列大小</option>
+            <option value="participation_rate">参与率</option>
+            <option value="trend_spread">趋势价差</option>
+          </select>
+        </div>
+        <div class="ctrl-group">
+          <label class="ctrl-label">排序方向</label>
+          <select id="taSortDir">
+            <option value="desc">降序 ▼</option>
+            <option value="asc">升序 ▲</option>
+          </select>
+        </div>
+        <button onclick="TradeAnalysis.load()" style="width:100%;padding:10px;background:#4FA8D7;border:none;border-radius:6px;color:#111;font-weight:600;cursor:pointer;margin-top:12px;">查询</button>
+        <button onclick="TradeAnalysis.exportCSV()" style="width:100%;padding:10px;background:#353538;border:1px solid #404044;border-radius:6px;color:#bbb;cursor:pointer;margin-top:8px;">导出CSV</button>
+      </div>
+      <div class="panel-section" style="margin-top:12px;">
+        <div class="panel-title">汇总统计</div>
+        <div id="taSummary" style="padding:8px;font-size:12px;line-height:1.8;color:#888;"></div>
+      </div>
+    </div>
+    <div>
+      <div class="panel-section" style="margin-bottom:12px;">
+        <div class="panel-title">交易列表 <span id="taCount" style="font-size:11px;color:#888;font-weight:normal;"></span></div>
+        <div id="taTableWrap" style="max-height:500px;overflow:auto;"></div>
+        <div id="taPagination" style="display:flex;justify-content:center;gap:6px;margin-top:10px;"></div>
+      </div>
+      <div class="no-data" id="taNoData">点击"查询"加载交易记录</div>
+    </div>
+  </div>
+</div>
+
+<script>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
@@ -1008,6 +1104,162 @@ function fmtNum(v) {
 function showError(msg) {
   document.getElementById('errorBox').innerHTML = `<div class="error-msg">${msg}</div>`;
 }
+
+// ============================================================
+// Tab切换
+// ============================================================
+let currentTab = 'analysis';
+function showTab(tab, el) {
+  document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('analysisPanel').style.display = tab === 'analysis' ? 'flex' : 'none';
+  document.getElementById('backtestPanel').style.display = tab === 'backtest' ? 'block' : 'none';
+  document.getElementById('tradeAnalysisPanel').style.display = tab === 'tradeAnalysis' ? 'block' : 'none';
+  currentTab = tab;
+}
+
+// ============================================================
+// 交易分析
+// ============================================================
+const TradeAnalysis = {
+  data: [],
+  summary: null,
+  page: 1,
+  pageSize: 50,
+
+  async load() {
+    const params = new URLSearchParams({ page: this.page, page_size: this.pageSize });
+    const token = document.getElementById('taToken').value.trim();
+    const period = document.getElementById('taPeriod').value;
+    const version = document.getElementById('taVersion').value.trim();
+    const exit_reason = document.getElementById('taExitReason').value;
+    const min_vol = document.getElementById('taMinVol').value;
+    const max_vol = document.getElementById('taMaxVol').value;
+    const min_return = document.getElementById('taMinReturn').value;
+    const max_return = document.getElementById('taMaxReturn').value;
+    const sort_field = document.getElementById('taSortField').value;
+    const sort_dir = document.getElementById('taSortDir').value;
+
+    if (token) params.append('token', token);
+    if (period) params.append('period', period);
+    if (version) params.append('strategy_version', version);
+    if (exit_reason) params.append('exit_reason', exit_reason);
+    if (min_vol) params.append('min_volatility', min_vol);
+    if (max_vol) params.append('max_volatility', max_vol);
+    if (min_return) params.append('min_return', min_return);
+    if (max_return) params.append('max_return', max_return);
+    params.append('sort_field', sort_field);
+    params.append('sort_dir', sort_dir);
+
+    document.getElementById('taNoData').style.display = 'none';
+    document.getElementById('taTableWrap').innerHTML = '<div style="padding:20px;text-align:center;color:#888;">加载中...</div>';
+
+    try {
+      const [tradesResp, summaryResp] = await Promise.all([
+        fetch(`/api/trade_records?${params}`),
+        fetch(`/api/trade_records/summary?${params}`)
+      ]);
+      const tradesData = await tradesResp.json();
+      const summaryData = await summaryResp.json();
+
+      if (!tradesData.success || !tradesData.data || !tradesData.data.length) {
+        document.getElementById('taTableWrap').innerHTML = '';
+        document.getElementById('taCount').textContent = '0 条交易';
+        document.getElementById('taNoData').style.display = 'block';
+        this.summary = null;
+        document.getElementById('taSummary').innerHTML = '无数据';
+        return;
+      }
+
+      this.data = tradesData.data;
+      this.summary = summaryData.success ? summaryData.summary : null;
+      this._renderTable();
+      this._renderSummary();
+      this._renderPagination(tradesData.total);
+      document.getElementById('taCount').textContent = `${tradesData.total} 条交易`;
+    } catch (e) {
+      document.getElementById('taTableWrap').innerHTML = `<div style="padding:20px;color:red;">加载失败: ${e.message}</div>`;
+    }
+  },
+
+  _renderTable() {
+    const fields = [
+      ['token', 'Token'], ['period', '周期'], ['strategy_version', '版本'],
+      ['trade_type', '方向'], ['entry_time', '入场时间'], ['exit_time', '出场时间'],
+      ['return_pct', '收益%'], ['holding_bars', '持仓Bar'], ['exit_reason', '出场原因'],
+      ['atr_pct_14', '波动率%'], ['participation_rate', '参与率%'], ['queue_size', '队列大小'],
+      ['trend_spread', '趋势价差'], ['quote_volume', '成交量']
+    ];
+    const cols = fields.map(f => f[0]);
+    let html = `<table style="width:100%;border-collapse:collapse;font-size:12px;color:#bbb;">
+      <thead><tr>${fields.map(f => `<th style="text-align:left;padding:6px 8px;background:#353538;color:#4FA8D7;white-space:nowrap;">${f[1]}</th>`).join('')}</tr></thead>
+      <tbody>`;
+    this.data.forEach(row => {
+      html += `<tr>${cols.map(c => {
+        let v = row[c];
+        if (v === null || v === undefined) v = '';
+        if (c === 'return_pct' && v !== '') v = (parseFloat(v)).toFixed(2) + '%';
+        else if (c === 'atr_pct_14' && v !== '') v = (parseFloat(v)).toFixed(3);
+        else if (c === 'participation_rate' && v !== '') v = (parseFloat(v)).toFixed(3);
+        else if (c === 'entry_time' && v !== '') v = String(v).slice(0, 19);
+        else if (c === 'exit_time' && v !== '') v = String(v).slice(0, 19);
+        return `<td style="padding:5px 8px;border-bottom:1px solid #404044;color:${c === 'return_pct' && parseFloat(v) < 0 ? '#E05C5C' : '#bbb'};">${v}</td>`;
+      }).join('')}</tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('taTableWrap').innerHTML = html;
+  },
+
+  _renderSummary() {
+    if (!this.summary) return;
+    const s = this.summary.data || this.summary;
+    const items = [
+      ['交易总数(卖出)', s.total_trades],
+      ['胜率', s.win_rate != null ? (parseFloat(s.win_rate) * 100).toFixed(1) + '%' : 'N/A'],
+      ['平均收益%', s.avg_return != null ? parseFloat(s.avg_return).toFixed(2) + '%' : 'N/A'],
+      ['平均波动率%', s.avg_volatility != null ? parseFloat(s.avg_volatility).toFixed(3) : 'N/A'],
+      ['平均参与率%', s.avg_participation != null ? parseFloat(s.avg_participation).toFixed(3) : 'N/A'],
+      ['平均趋势价差', s.avg_trend_spread != null ? parseFloat(s.avg_trend_spread).toFixed(4) : 'N/A'],
+      ['平均持仓Bar', s.avg_holding_bars != null ? parseFloat(s.avg_holding_bars).toFixed(1) : 'N/A'],
+      ['平均成交量', s.avg_quote_volume != null ? parseInt(s.avg_quote_volume) : 'N/A']
+    ];
+    document.getElementById('taSummary').innerHTML = items.map(([k, v]) => `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span style="color:#888;">${k}</span><span style="color:#4FA8D7;">${v}</span></div>`).join('');
+  },
+
+  _renderPagination(total) {
+    const totalPages = Math.ceil(total / this.pageSize);
+    if (totalPages <= 1) { document.getElementById('taPagination').innerHTML = ''; return; }
+    let html = '';
+    if (this.page > 1) html += `<button onclick="TradeAnalysis.goPage(${this.page - 1})" style="padding:6px 12px;background:#353538;border:1px solid #404044;border-radius:4px;color:#bbb;cursor:pointer;">上一页</button>`;
+    html += `<span style="font-size:12px;color:#888;padding:0 8px;">${this.page} / ${totalPages}</span>`;
+    if (this.page < totalPages) html += `<button onclick="TradeAnalysis.goPage(${this.page + 1})" style="padding:6px 12px;background:#353538;border:1px solid #404044;border-radius:4px;color:#bbb;cursor:pointer;">下一页</button>`;
+    document.getElementById('taPagination').innerHTML = html;
+  },
+
+  goPage(p) {
+    this.page = p;
+    this.load();
+  },
+
+  exportCSV() {
+    if (!this.data || !this.data.length) return;
+    const fields = ['token','period','strategy_version','trade_type','entry_time','exit_time','return_pct','holding_bars','exit_reason','atr_pct_14','participation_rate','queue_size','trend_spread','quote_volume','notional_usd','queue_cost','position_value','cash_at_entry','atr_14','trend_up','vwap_fast','vwap_slow','vol_std_7','vol_std_14','vol_std_30','return_7d','return_14d','return_30d','qv_rolling_avg','signal_bar_close','signal_bar_high','signal_bar_low','signal_bar_open','slip_bps','fee_bps','total_cost_bps'];
+    const lines = [fields.join(',')];
+    this.data.forEach(row => {
+      lines.push(fields.map(c => {
+        const v = row[c];
+        if (v === null || v === undefined) return '';
+        if (typeof v === 'string' && (v.includes(',') || v.includes('"') || v.includes('\n'))) return `"${v.replace(/"/g, '""')}"`;
+        return v;
+      }).join(','));
+    });
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `trade_analysis_${Date.now()}.csv`;
+    a.click();
+  }
+};
 
 // ============================================================
 // 热力图渲染增强（spread × size 交叉矩阵）

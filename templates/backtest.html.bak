@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>回测实验工作台</title>
+  <style>
+    :root {
+      --sky: #4FA8D7;
+      --gray-1: #2A2A2E;
+      --gray-2: #353538;
+      --gray-3: #404044;
+      --gray-4: #888888;
+      --gray-5: #d0d0d0;
+      --bg: #1E1E22;
+      --pos: #4CAF82;
+      --neg: #E05C5C;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--gray-5); }
+    .header { background: var(--gray-1); border-bottom: 1px solid var(--gray-3); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { color: var(--sky); font-size: 18px; }
+    .top-tabs { display: flex; gap: 8px; }
+    .top-tab { padding: 6px 12px; border: 1px solid var(--gray-3); border-radius: 6px; color: var(--gray-4); text-decoration: none; font-size: 12px; }
+    .top-tab.active { border-color: var(--sky); color: var(--sky); background: var(--gray-2); }
+    .main { display: grid; grid-template-columns: 360px 1fr; gap: 14px; padding: 14px; }
+    .panel { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 14px; }
+    .panel h2 { font-size: 13px; color: var(--sky); margin-bottom: 10px; }
+    .group { margin-bottom: 10px; }
+    .group label { display: block; font-size: 12px; color: var(--gray-4); margin-bottom: 4px; }
+    .group input, .group select, .group textarea {
+      width: 100%; background: var(--gray-2); border: 1px solid var(--gray-3); color: var(--gray-5);
+      border-radius: 6px; padding: 8px;
+    }
+    .group textarea { min-height: 70px; resize: vertical; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn {
+      flex: 1; padding: 9px 10px; border-radius: 6px; border: none; cursor: pointer;
+      background: var(--sky); color: #111; font-weight: 600;
+    }
+    .btn.secondary { background: var(--gray-2); color: var(--gray-5); border: 1px solid var(--gray-3); }
+    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+    .card { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 10px; }
+    .card .k { color: var(--gray-4); font-size: 11px; margin-bottom: 2px; }
+    .card .v { font-size: 18px; font-weight: 700; }
+    .v.pos { color: var(--pos); }
+    .v.neg { color: var(--neg); }
+    .charts { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .chart-box { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 10px; }
+    .chart-box h3 { color: var(--sky); font-size: 12px; margin-bottom: 8px; }
+    .table-wrap { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 10px; margin-top: 10px; max-height: 360px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+    th, td { border-bottom: 1px solid var(--gray-3); padding: 6px; text-align: center; vertical-align: middle; }
+    th { color: var(--sky); background: var(--gray-1); white-space: nowrap; }
+    td { word-break: break-word; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: var(--gray-2); }
+    tbody tr.active-row { outline: 1px solid var(--sky); background: rgba(79,168,215,0.12); }
+    .muted { color: var(--gray-4); font-size: 11px; }
+    .chart-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+    .toolbar-btn {
+      background: var(--gray-2);
+      border: 1px solid var(--gray-3);
+      color: var(--gray-5);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .toolbar-btn:hover { border-color: var(--sky); color: var(--sky); }
+    .toolbar-check { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--gray-4); }
+    .range-row { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+    .range-row label { font-size: 11px; color: var(--gray-4); min-width: 52px; }
+    .range-row input[type="range"] { flex: 1; }
+    .grid-card { background: var(--gray-1); border: 1px solid var(--gray-3); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+    .grid-card h3 { color: var(--sky); font-size: 12px; margin-bottom: 6px; }
+    .grid-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0; font-size: 12px; }
+    .grid-meta div { background: var(--gray-2); border: 1px solid var(--gray-3); border-radius: 6px; padding: 6px; }
+    .grid-links { display: flex; flex-wrap: wrap; gap: 6px; }
+    .grid-link { font-size: 11px; color: var(--sky); border: 1px solid var(--sky); border-radius: 6px; padding: 4px 8px; text-decoration: none; }
+    .grid-link:hover { background: rgba(79,168,215,0.12); }
+    .detail-tabs { display: flex; gap: 8px; margin-top: 10px; margin-bottom: 8px; }
+    .detail-tab {
+      background: var(--gray-2);
+      border: 1px solid var(--gray-3);
+      color: var(--gray-5);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .detail-tab.active {
+      border-color: var(--sky);
+      color: var(--sky);
+      background: rgba(79,168,215,0.12);
+    }
+    .detail-pane { display: none; }
+    .detail-pane.active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>回测实验工作台</h1>
+    <div class="top-tabs">
+      <a class="top-tab" href="/">数据分析</a>
+      <a class="top-tab active" href="/backtest">回测实验</a>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="panel">
+      <h2>记录新实验</h2>
+      <div class="group"><label>实验名</label><input id="f_name" placeholder="如: 动态A池 w240 tp0.5"></div>
+      <div class="group"><label>策略版本</label><input id="f_version" placeholder="v2-dynliq-netedge"></div>
+      <div class="group"><label>Split</label>
+        <select id="f_split">
+          <option value="train">train</option>
+          <option value="test">test</option>
+          <option value="holdout">holdout</option>
+        </select>
+      </div>
+      <div class="group"><label>总收益(%)</label><input id="f_ret" type="number" step="0.0001"></div>
+      <div class="group"><label>最大回撤(%)</label><input id="f_mdd" type="number" step="0.0001"></div>
+      <div class="group"><label>交易次数</label><input id="f_trades" type="number"></div>
+      <div class="group"><label>成交量(USD)</label><input id="f_volume" type="number" step="0.01"></div>
+      <div class="group"><label>胜率(%)</label><input id="f_win" type="number" step="0.0001"></div>
+      <div class="group"><label>Sharpe</label><input id="f_sharpe" type="number" step="0.0001"></div>
+      <div class="group"><label>改动点（仅写相对上个版本）</label><textarea id="f_change_summary" placeholder="只写增量变化：如“新增动态滑点；sell_confirm 4->5”。不要重复填写未变化部分。"></textarea></div>
+      <div class="muted" id="f_change_hint" style="margin-top:-4px;margin-bottom:6px;">将自动提示上一个版本作为参考。</div>
+      <div class="group"><label>本次参数设置</label><textarea id="f_param_summary" placeholder="如: dynamic_slippage=on, net_edge_k=1.5, window=240, top_pct=0.5"></textarea></div>
+      <div class="group"><label>核心指标(JSON, 参考因子指标库)</label><textarea id="f_metrics" placeholder='{"ic":0.03,"rank_ic":0.05,"ir":0.8,"top_bottom_spread":1.2,"alpha":0.6,"sharpe":1.1,"calmar":0.9,"mdd":-3.2}'></textarea></div>
+      <div class="group"><label>指标公式与含义</label><textarea id="f_metric_formula_text" placeholder="示例：\n- Sharpe=E[Rp-Rf]/σ(Rp)，含义：单位波动风险下的超额收益\n- MDD=max((Peak-Value)/Peak)，含义：历史最深回撤"></textarea></div>
+      <div class="group"><label>备注</label><textarea id="f_notes" placeholder="写下结论和下一步"></textarea></div>
+      <div class="btn-row">
+        <button class="btn" onclick="saveExperiment()">保存记录</button>
+        <button class="btn secondary" onclick="reloadAll()">刷新</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn secondary" onclick="clearAllExperiments()" style="color:#E05C5C;border-color:#E05C5C;">清空全部记录</button>
+      </div>
+      <div class="muted" style="margin-top:8px;">数据保存在独立库：`backtest_experiments.db`</div>
+    </div>
+
+    <div>
+      <div class="cards" style="grid-template-columns: repeat(6, 1fr);">
+        <div class="card"><div class="k">初始资金</div><div class="v" id="k_eq_init">-</div></div>
+        <div class="card"><div class="k">最终资金</div><div class="v" id="k_eq_final">-</div></div>
+        <div class="card"><div class="k">总收益(%)</div><div class="v" id="k_total_ret">-</div></div>
+        <div class="card"><div class="k">最大回撤(%)</div><div class="v" id="k_mdd">-</div></div>
+        <div class="card"><div class="k">成交量(USD)</div><div class="v" id="k_volume">-</div></div>
+        <div class="card"><div class="k">收益/成交量</div><div class="v" id="k_ret_per_vol">-</div></div>
+      </div>
+
+      <div class="charts">
+        <div class="chart-box">
+          <div id="equityStats" style="display:flex;gap:16px;margin-bottom:8px;font-size:12px;color:#aaa;">
+            <span>收益: <b id="eqGain">-</b></span>
+          </div>
+          <div class="chart-toolbar">
+            <button class="toolbar-btn" onclick="zoomIn()">放大</button>
+            <button class="toolbar-btn" onclick="zoomOut()">缩小</button>
+            <button class="toolbar-btn" onclick="zoomReset()">重置</button>
+            <label class="toolbar-check">
+              <input id="toggleTrades" type="checkbox" onchange="renderZoomedCurves()">
+              显示买卖点
+            </label>
+          </div>
+          <div class="range-row">
+            <label>起点</label>
+            <input id="rangeStart" type="range" min="0" max="0" value="0" oninput="onRangeChange()">
+            <label id="rangeStartLabel">0</label>
+          </div>
+          <div class="range-row">
+            <label>终点</label>
+            <input id="rangeEnd" type="range" min="1" max="1" value="1" oninput="onRangeChange()">
+            <label id="rangeEndLabel">1</label>
+          </div>
+          <canvas id="retLine"></canvas>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <colgroup>
+            <col style="width: 70px;">
+            <col style="width: 31%;">
+            <col style="width: 27%;">
+            <col style="width: 27%;">
+            <col style="width: 15%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>版本</th><th>参数</th><th>改动点（相对上次）</th><th>备注</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="expBody"></tbody>
+        </table>
+      </div>
+      <div class="detail-tabs">
+        <button class="detail-tab active" id="tabDetailBtn" onclick="switchDetailTab('detail')">详情</button>
+      </div>
+
+      <div class="detail-pane active" id="detailPane">
+        <div class="table-wrap">
+          <div class="muted" style="margin-bottom:8px;">版本详细记录（train/test/holdout）</div>
+          <table>
+            <thead>
+              <tr>
+                <th>split</th><th>收益%</th><th>回撤%</th><th>交易数</th><th>成交量(USD)</th><th>净利润</th><th>利润/成交额</th><th>胜率%</th><th>Sharpe</th>
+              </tr>
+            </thead>
+            <tbody id="detailBody"></tbody>
+          </table>
+        </div>
+        <div class="table-wrap">
+          <div class="muted" style="margin-bottom:8px;">指标公式与含义（当前版本）</div>
+          <div id="formulaBox" style="white-space: pre-wrap; line-height: 1.6; font-size: 12px; color: var(--gray-5);">未填写</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    let lineChart = null;
+    let detailActiveExpId = null;
+    let latestRows = [];
+    let activeExpId = null;
+    let groupedVersions = [];
+    let allExperimentRows = [];
+    let curveLabels = [];
+    let curveEquity = [];
+    let curveDrawdown = [];
+    let curveTrades = [];
+    let zoomState = { start: 0, end: 0 };
+    let currentTab = 'detail';
+
+    function toNum(v) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    async function saveExperiment() {
+      const changeInput = document.getElementById('f_change_summary').value.trim();
+      if (!changeInput) {
+        alert('请填写“改动点（仅相对上个版本）”。');
+        return;
+      }
+      const payload = {
+        experiment_name: document.getElementById('f_name').value.trim(),
+        strategy_version: document.getElementById('f_version').value.trim(),
+        split_name: document.getElementById('f_split').value,
+        total_return_pct: toNum(document.getElementById('f_ret').value),
+        max_drawdown_pct: toNum(document.getElementById('f_mdd').value),
+        trades: toNum(document.getElementById('f_trades').value),
+        trade_volume_usd: toNum(document.getElementById('f_volume').value),
+        win_rate_pct: toNum(document.getElementById('f_win').value),
+        sharpe: toNum(document.getElementById('f_sharpe').value),
+        direction: '',
+        change_summary: changeInput,
+        param_summary: document.getElementById('f_param_summary').value.trim(),
+        notes: document.getElementById('f_notes').value.trim(),
+        tags: '',
+        metric_version: 'factor_detection_metric_library_v1',
+        metric_formula_text: document.getElementById('f_metric_formula_text').value.trim(),
+        params: {}
+      };
+      const rawMetrics = document.getElementById('f_metrics').value.trim();
+      if (rawMetrics) {
+        try { payload.metrics = JSON.parse(rawMetrics); }
+        catch (e) { alert('核心指标JSON格式错误'); return; }
+      } else {
+        payload.metrics = {};
+      }
+      const resp = await fetch('/api/backtest/experiments', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        alert(data.error || '保存失败');
+        return;
+      }
+      reloadAll();
+    }
+
+    function parseVersionNum(text) {
+      const m = String(text || '').match(/(\d+)/);
+      return m ? Number(m[1]) : null;
+    }
+
+    function inferPrevVersionRow() {
+      const curV = document.getElementById('f_version').value.trim();
+      const curN = parseVersionNum(curV);
+      const split = (document.getElementById('f_split').value || '').toLowerCase();
+      const rows = [...allExperimentRows].sort((a, b) => {
+        const at = a.created_at || '';
+        const bt = b.created_at || '';
+        if (at !== bt) return bt.localeCompare(at);
+        return (b.id || 0) - (a.id || 0);
+      });
+      if (curN != null) {
+        const target = curN - 1;
+        const hit = rows.find(r => parseVersionNum(r.strategy_version) === target && ((r.split_name || '').toLowerCase() === split));
+        if (hit) return hit;
+      }
+      return rows.find(r => (r.split_name || '').toLowerCase() === split) || rows[0] || null;
+    }
+
+    function updateChangeHint() {
+      const el = document.getElementById('f_change_hint');
+      const prev = inferPrevVersionRow();
+      if (!prev) {
+        el.textContent = '当前是首个版本：可写“建立基线”。';
+        return;
+      }
+      const pv = prev.strategy_version || `id=${prev.id}`;
+      const ps = prev.split_name || '-';
+      const pp = (prev.param_summary || '').trim();
+      el.textContent = pp
+        ? `参考上一版：${pv} / ${ps}。仅填写相对该版本的变化（上一版参数：${pp}）。`
+        : `参考上一版：${pv} / ${ps}。仅填写相对该版本的变化。`;
+    }
+
+    async function clearAllExperiments() {
+      if (!confirm('确认清空全部实验记录？此操作不可恢复。')) return;
+      const resp = await fetch('/api/backtest/experiments/clear', { method: 'POST' });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        alert(data.error || '清空失败');
+        return;
+      }
+      activeExpId = null;
+      document.getElementById('detailBody').innerHTML = '';
+      document.getElementById('formulaBox').textContent = '未填写';
+      reloadAll();
+    }
+
+    async function deleteExperiment(expId, versionNo) {
+      if (!expId) {
+        alert('无效的实验ID');
+        return;
+      }
+      if (!confirm(`确认删除该版本记录？\nID=${expId}\n版本=${versionNo || '-'}`)) return;
+      const resp = await fetch(`/api/backtest/experiments/${expId}`, { method: 'DELETE' });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        alert(data.error || '删除失败');
+        return;
+      }
+      if (Number(activeExpId) === Number(expId)) activeExpId = null;
+      reloadAll();
+    }
+
+    function renderKpiFromRecord(r) {
+      console.log('renderKpiFromRecord called with:', r);
+      const ret = toNum(r?.total_return_pct);
+      const mdd = toNum(r?.max_drawdown_pct);
+      const vol = toNum(r?.trade_volume_usd);
+      const retPerVol = (ret != null && vol != null && vol > 0) ? (ret / vol) : null;
+
+      const retEl = document.getElementById('k_total_ret');
+      retEl.textContent = ret == null ? '-' : ret.toFixed(2);
+      retEl.className = 'v ' + (ret != null && ret >= 0 ? 'pos' : 'neg');
+
+      const mddEl = document.getElementById('k_mdd');
+      mddEl.textContent = mdd == null ? '-' : mdd.toFixed(2);
+      mddEl.className = 'v ' + (mdd != null && mdd < 0 ? 'neg' : 'pos');
+
+      const volEl = document.getElementById('k_volume');
+      volEl.textContent = vol == null ? '-' : vol.toFixed(0);
+      volEl.className = 'v neu';
+
+      const rpvEl = document.getElementById('k_ret_per_vol');
+      rpvEl.textContent = retPerVol == null ? '-' : retPerVol.toExponential(3);
+      rpvEl.className = 'v ' + (retPerVol != null && retPerVol >= 0 ? 'pos' : 'neg');
+    }
+
+    function renderTable(rows) {
+      const tbody = document.getElementById('expBody');
+      const sorted = [...rows].sort((a, b) => {
+        const an = (a.experiment_name || '');
+        const bn = (b.experiment_name || '');
+        if (an !== bn) return an.localeCompare(bn);
+        const at = a.created_at || '';
+        const bt = b.created_at || '';
+        if (at !== bt) return at.localeCompare(bt);
+        return (a.id || 0) - (b.id || 0);
+      });
+
+      function parseParams(r) {
+        if (!r || !r.params_json) return {};
+        try {
+          const obj = JSON.parse(r.params_json);
+          return obj && typeof obj === 'object' ? obj : {};
+        } catch {
+          return {};
+        }
+      }
+
+      function compactVersion(r) {
+        if (r.strategy_version && String(r.strategy_version).trim()) return String(r.strategy_version).trim();
+        if (!r.experiment_name) return '-';
+        return String(r.experiment_name).split('|')[0].trim();
+      }
+
+      function parseVersionNumberFromAny(r) {
+        const sv = String(r?.strategy_version || '').trim();
+        let m = sv.match(/^v(\d+)$/i);
+        if (m) return Number(m[1]);
+        const en = String(r?.experiment_name || '').trim();
+        m = en.match(/版本\s*(\d+)/);
+        if (m) return Number(m[1]);
+        return null;
+      }
+
+      function diffParams(prevObj, curObj) {
+        const keys = new Set([...Object.keys(prevObj || {}), ...Object.keys(curObj || {})]);
+        const changes = [];
+        for (const k of keys) {
+          const pv = prevObj ? prevObj[k] : undefined;
+          const cv = curObj ? curObj[k] : undefined;
+          if (JSON.stringify(pv) !== JSON.stringify(cv)) {
+            changes.push(`${k}: ${pv === undefined ? '∅' : pv} -> ${cv === undefined ? '∅' : cv}`);
+          }
+        }
+        return changes;
+      }
+
+      // 一行一个版本：将 train/test/holdout 合并
+      const grouped = new Map();
+      for (const r of sorted) {
+        const key = (r.experiment_name || '').replace(/\s*\|\s*(train|test|holdout)\s*$/i, '').trim() || compactVersion(r);
+        if (!grouped.has(key)) {
+          grouped.set(key, { key, train: null, test: null, holdout: null, any: r });
+        }
+        const g = grouped.get(key);
+        const s = (r.split_name || '').toLowerCase();
+        if (s === 'train') g.train = r;
+        else if (s === 'test') g.test = r;
+        else if (s === 'holdout') g.holdout = r;
+        if (!g.any || ((r.created_at || '') > (g.any.created_at || ''))) g.any = r;
+      }
+
+      const versions = Array.from(grouped.values()).sort((a, b) => {
+        const at = a.any?.created_at || '';
+        const bt = b.any?.created_at || '';
+        if (at !== bt) return at.localeCompare(bt);
+        return (a.any?.id || 0) - (b.any?.id || 0);
+      });
+
+      const versionRows = [];
+      let prevParams = {};
+      versions.forEach((g, idx) => {
+        const paramsObj = parseParams(g.any);
+        const diff = diffParams(prevParams, paramsObj);
+        prevParams = paramsObj;
+        const manualChange = (g.any?.change_summary || g.any?.direction || '').trim();
+        const parsedNo = parseVersionNumberFromAny(g.any);
+        versionRows.push({
+          versionNo: parsedNo != null ? parsedNo : (idx + 1),
+          paramsText: g.any?.param_summary || JSON.stringify(paramsObj),
+          changeText: manualChange || (diff.length ? diff.join('; ') : '无变化'),
+          notesText: g.any?.notes || '',
+          clickId: g.holdout?.id || g.test?.id || g.train?.id || g.any?.id || null,
+          _groupKey: g.key,
+          _detail: g,
+        });
+      });
+
+      const latestFirst = [...versionRows].sort((a, b) => {
+        const av = Number(a.versionNo);
+        const bv = Number(b.versionNo);
+        if (Number.isFinite(av) && Number.isFinite(bv) && av !== bv) return bv - av;
+        const at = a._detail?.any?.created_at || '';
+        const bt = b._detail?.any?.created_at || '';
+        if (at !== bt) return bt.localeCompare(at);
+        return (b.clickId || 0) - (a.clickId || 0);
+      });
+      latestRows = latestFirst;
+      groupedVersions = latestFirst;
+      tbody.innerHTML = latestFirst.map(r => `
+        <tr data-exp-id="${r.clickId || ''}" onclick="onSelectExperiment(${r.clickId || 'null'})">
+          <td>${r.versionNo}</td>
+          <td>${r.paramsText || ''}</td>
+          <td>${r.changeText || ''}</td>
+          <td>${r.notesText || ''}</td>
+          <td>
+            <button class="btn secondary" style="padding:4px 8px;font-size:11px;color:#E05C5C;border-color:#E05C5C;"
+              onclick="event.stopPropagation(); deleteExperiment(${r.clickId || 'null'}, '${String(r.versionNo || '').replace(/'/g, '\\\'')}')">删除</button>
+          </td>
+        </tr>
+      `).join('');
+      refreshActiveRowStyle();
+      if (latestFirst.length && activeExpId == null) {
+        onSelectExperiment(latestFirst[0].clickId);
+      }
+    }
+
+    function refreshActiveRowStyle() {
+      document.querySelectorAll('#expBody tr').forEach(tr => {
+        const cur = tr.getAttribute('data-exp-id');
+        if (activeExpId != null && cur && Number(cur) === Number(activeExpId)) tr.classList.add('active-row');
+        else tr.classList.remove('active-row');
+      });
+    }
+
+    function syncRangeControls() {
+      const n = curveLabels.length;
+      const rs = document.getElementById('rangeStart');
+      const re = document.getElementById('rangeEnd');
+      const sl = document.getElementById('rangeStartLabel');
+      const el = document.getElementById('rangeEndLabel');
+      if (!n) {
+        rs.min = 0; rs.max = 0; rs.value = 0;
+        re.min = 0; re.max = 0; re.value = 0;
+        sl.textContent = '0'; el.textContent = '0';
+        return;
+      }
+      rs.min = 0; rs.max = n - 1; rs.value = zoomState.start;
+      re.min = 1; re.max = n; re.value = zoomState.end;
+      sl.textContent = String(zoomState.start);
+      el.textContent = String(zoomState.end);
+    }
+
+    function onRangeChange() {
+      const rs = document.getElementById('rangeStart');
+      const re = document.getElementById('rangeEnd');
+      let s = Number(rs.value);
+      let e = Number(re.value);
+      if (e <= s + 1) e = s + 1;
+      zoomState.start = Math.max(0, s);
+      zoomState.end = Math.min(curveLabels.length, e);
+      syncRangeControls();
+      renderZoomedCurves();
+    }
+
+
+    function renderZoomedCurves() {
+      if (!curveLabels.length) return;
+      const s = Math.max(0, Math.min(zoomState.start, curveLabels.length - 1));
+      const e = Math.max(s + 1, Math.min(zoomState.end, curveLabels.length));
+      const labels = curveLabels.slice(s, e);
+      const eq = curveEquity.slice(s, e);
+      const showTrades = document.getElementById('toggleTrades').checked;
+
+      const datasets = [{
+        label: 'equity',
+        data: eq,
+        borderColor: '#4FA8D7',
+        pointRadius: 0,
+        borderWidth: 1.5
+      }];
+
+      if (showTrades && curveTrades.length) {
+        const idxMap = new Map();
+        labels.forEach((x, i) => idxMap.set(String(x), i));
+        const visible = curveTrades
+          .map(t => ({...t, idx: idxMap.get(String(t.x))}))
+          .filter(t => t.idx !== undefined);
+
+        const cap = 300;
+        let filtered = visible;
+        if (visible.length > cap) {
+          const step = Math.ceil(visible.length / cap);
+          filtered = visible.filter((_, i) => i % step === 0);
+        }
+
+        const buys = filtered.filter(t => t.side === 'buy').map(t => ({x: t.idx, y: t.price}));
+        const sells = filtered.filter(t => t.side === 'sell').map(t => ({x: t.idx, y: t.price}));
+        if (buys.length) {
+          datasets.push({
+            type: 'scatter',
+            label: 'buy',
+            data: buys,
+            pointRadius: 2.5,
+            pointBackgroundColor: '#4CAF82',
+            pointBorderColor: '#4CAF82',
+            showLine: false
+          });
+        }
+        if (sells.length) {
+          datasets.push({
+            type: 'scatter',
+            label: 'sell',
+            data: sells,
+            pointRadius: 2.5,
+            pointBackgroundColor: '#E05C5C',
+            pointBorderColor: '#E05C5C',
+            showLine: false
+          });
+        }
+      }
+
+      if (lineChart) lineChart.destroy();
+      lineChart = new Chart(document.getElementById('retLine'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          plugins: { legend: { labels: { color: '#bbb' } } },
+          scales: {
+            x: { ticks: { color: '#888' } },
+            y: { ticks: { color: '#888' }, title: { display: true, text: '净值(USD)', color: '#888' } }
+          }
+        }
+      });
+      syncRangeControls();
+    }
+
+    function zoomIn() {
+      if (!curveLabels.length) return;
+      const len = zoomState.end - zoomState.start;
+      if (len <= 20) return;
+      const shrink = Math.max(5, Math.floor(len * 0.15));
+      zoomState.start += Math.floor(shrink / 2);
+      zoomState.end -= Math.ceil(shrink / 2);
+      renderZoomedCurves();
+    }
+
+    function zoomOut() {
+      if (!curveLabels.length) return;
+      const len = zoomState.end - zoomState.start;
+      const expand = Math.max(5, Math.floor(len * 0.2));
+      zoomState.start = Math.max(0, zoomState.start - Math.floor(expand / 2));
+      zoomState.end = Math.min(curveLabels.length, zoomState.end + Math.ceil(expand / 2));
+      renderZoomedCurves();
+    }
+
+    function zoomReset() {
+      if (!curveLabels.length) return;
+      zoomState.start = 0;
+      zoomState.end = curveLabels.length;
+      renderZoomedCurves();
+    }
+
+    async function renderExperimentCurve(expId) {
+      if (!expId) return;
+      console.log('renderExperimentCurve called with expId:', expId);
+      // 先尝试 equity_curves 表
+      let resp = await fetch(`/api/backtest/equity_curves/${expId}`);
+      let data = null;
+      if (resp.ok) {
+        data = await resp.json();
+      }
+      console.log('equity_curves API response:', data);
+      // 回退到 CSV 文件方式
+      if (!data || !data.success) {
+        resp = await fetch(`/api/backtest/experiments/${expId}/curve?mode=trade`);
+        if (resp.ok) data = await resp.json();
+      }
+      if (!data || !data.success) {
+        console.warn('无净值曲线数据:', data?.error);
+        curveLabels = [];
+        curveEquity = [];
+        curveDrawdown = [];
+        curveTrades = [];
+        if (lineChart) lineChart.destroy();
+        lineChart = null;
+        document.getElementById('k_eq_init').textContent = '-';
+        document.getElementById('k_eq_final').textContent = '-';
+        document.getElementById('eqGain').textContent = '-';
+        document.getElementById('eqGain').className = '';
+        return;
+      }
+      const rows = data.data || [];
+      console.log('rows length:', rows.length);
+      if (!rows.length) {
+        curveLabels = [];
+        curveEquity = [];
+        curveDrawdown = [];
+        curveTrades = [];
+        if (lineChart) lineChart.destroy();
+        lineChart = null;
+        document.getElementById('k_eq_init').textContent = '-';
+        document.getElementById('k_eq_final').textContent = '-';
+        document.getElementById('eqGain').textContent = '-';
+        document.getElementById('eqGain').className = '';
+        return;
+      }
+      const labels = rows.map((r, i) => {
+        const s = String(r.x || r.timestamp || '');
+        const base = s.length >= 19 ? s.slice(0, 19).replace('T', ' ') : s;
+        return `${base} #${i}`;
+      });
+      const eq = rows.map(r => Number(r.equity ?? r.e ?? 0));
+      const dd = rows.map(r => Number(r.drawdown_pct ?? r.dd ?? 0));
+      const trades = (data.trades || []).map(t => ({x: t.x, price: Number(t.price), side: t.side})).filter(t => Number.isFinite(t.price) && t.x);
+      curveLabels = labels;
+      curveEquity = eq;
+      curveDrawdown = dd;
+      curveTrades = trades;
+      zoomState.start = 0;
+      zoomState.end = curveLabels.length;
+
+      // 更新净值统计卡片
+      const eqInit = eq.length > 0 ? eq[0] : null;
+      const eqFinal = eq.length > 0 ? eq[eq.length - 1] : null;
+      const eqGain = (eqInit != null && eqFinal != null && eqInit > 0) ? ((eqFinal - eqInit) / eqInit * 100) : null;
+      document.getElementById('k_eq_init').textContent = eqInit != null ? eqInit.toFixed(0) : '-';
+      document.getElementById('k_eq_final').textContent = eqFinal != null ? eqFinal.toFixed(0) : '-';
+      document.getElementById('k_eq_init').className = 'v';
+      document.getElementById('k_eq_final').className = 'v';
+      const gainEl = document.getElementById('eqGain');
+      if (eqGain != null) {
+        gainEl.textContent = (eqGain >= 0 ? '+' : '') + eqGain.toFixed(2) + '%';
+        gainEl.className = eqGain >= 0 ? 'pos' : 'neg';
+      } else {
+        gainEl.textContent = '-';
+        gainEl.className = '';
+      }
+
+      renderZoomedCurves();
+    }
+
+    async function onSelectExperiment(expId) {
+      activeExpId = expId;
+      refreshActiveRowStyle();
+      renderVersionDetails(expId);
+      await renderExperimentCurve(expId);
+      switchDetailTab('detail');
+    }
+
+    function renderVersionDetails(expId) {
+      const detailBody = document.getElementById('detailBody');
+      const formulaBox = document.getElementById('formulaBox');
+      const hit = groupedVersions.find(v => Number(v.clickId) === Number(expId));
+      if (!hit || !hit._detail) {
+        detailBody.innerHTML = '';
+        formulaBox.textContent = '未填写';
+        renderKpiFromRecord(null);
+        return;
+      }
+      const order = ['train', 'test', 'holdout'];
+      const rows = order.map(s => hit._detail[s]).filter(Boolean);
+      if (!rows.length) {
+        detailBody.innerHTML = '';
+        formulaBox.textContent = '未填写';
+        renderKpiFromRecord(null);
+        return;
+      }
+      const fmt = (v, d=2) => (v == null || v === '' ? '' : Number(v).toFixed(d));
+      detailBody.innerHTML = rows.map(r => `
+        <tr data-exp-id="${r.id || ''}" onclick="onSelectDetail(${r.id || 'null'})">
+          <td>${r.split_name || ''}</td>
+          <td>${fmt(r.total_return_pct)}</td>
+          <td>${fmt(r.max_drawdown_pct)}</td>
+          <td>${r.trades == null ? '' : r.trades}</td>
+          <td>${fmt(r.trade_volume_usd, 0)}</td>
+          <td>${fmt(r.net_profit, 0)}</td>
+          <td>${fmt(r.profit_per_volume, 1)}</td>
+          <td>${fmt(r.win_rate_pct)}</td>
+          <td>${fmt(r.sharpe, 3)}</td>
+        </tr>
+      `).join('');
+      formulaBox.textContent = hit._detail.any?.metric_formula_text || '未填写';
+      if (rows[0]?.id) onSelectDetail(rows[0].id);
+    }
+
+    async function onSelectDetail(expId) {
+      detailActiveExpId = expId;
+      const hit = groupedVersions.find(v => v._detail && ['train','test','holdout'].some(s => Number(v._detail[s]?.id) === Number(expId)));
+      if (hit) {
+        const rec = ['train','test','holdout'].map(s => hit._detail[s]).find(x => Number(x?.id) === Number(expId));
+        renderKpiFromRecord(rec || null);
+      } else {
+        renderKpiFromRecord(null);
+      }
+      await renderExperimentCurve(expId);
+      document.querySelectorAll('#detailBody tr').forEach(tr => {
+        const cur = Number(tr.getAttribute('data-exp-id'));
+        if (cur === Number(detailActiveExpId)) tr.classList.add('active-row');
+        else tr.classList.remove('active-row');
+      });
+    }
+
+    async function reloadAll() {
+      const resp = await fetch('/api/backtest/experiments?limit=2000');
+      const data = await resp.json();
+      const rows = data.data || [];
+      allExperimentRows = rows;
+      renderTable(rows);
+      updateChangeHint();
+    }
+
+    const ALL_METRICS = [
+      { key: '总收益率', field: '总收益率', fmt: v => v != null ? v.toFixed(2) + '%' : '-' },
+      { key: '净收益率', field: '净收益率', fmt: v => v != null ? v.toFixed(2) + '%' : '-', jsonKey: 'net_return' },
+      { key: '最大回撤', field: '最大回撤', fmt: v => v != null ? v.toFixed(2) + '%' : '-' },
+      { key: '夏普比率', field: '夏普比率', fmt: v => v != null ? v.toFixed(2) : '-' },
+      { key: 'Sortino比率', field: 'Sortino', fmt: v => v != null ? v.toFixed(2) : '-', jsonKey: 'sortino_ratio' },
+      { key: '胜率', field: '胜率', fmt: v => v != null ? v.toFixed(2) + '%' : '-' },
+      { key: 'Profit Factor', field: 'PF', fmt: v => v != null ? v.toFixed(2) : '-', jsonKey: 'profit_factor' },
+      { key: '盈亏比', field: '盈亏比', fmt: v => v != null ? v.toFixed(2) : '-', jsonKey: 'payoff_ratio' },
+      { key: '超额收益', field: 'Alpha', fmt: v => v != null ? v.toFixed(2) + '%' : '-', jsonKey: 'alpha' },
+      { key: '换手率', field: '换手率', fmt: v => v != null ? v.toFixed(1) + 'x' : '-', jsonKey: 'turnover' },
+    ];
+
+    let compareVersions = [];
+    let compareData = [];
+
+    function initVersionCompare(rows) {
+      const versionMap = new Map();
+      rows.forEach(r => {
+        const name = r.实验名 || r.策略版本 || 'Unknown';
+        const prefix = extractVersionPrefix(name);
+        if (!versionMap.has(prefix)) {
+          versionMap.set(prefix, []);
+        }
+        versionMap.get(prefix).push(r);
+      });
+
+      compareVersions = Array.from(versionMap.keys()).sort().reverse();
+      compareData = rows;
+
+      const versionContainer = document.getElementById('versionCheckboxes');
+      const metricContainer = document.getElementById('metricCheckboxes');
+
+      versionContainer.innerHTML = compareVersions.map(v => {
+        return `<label style="font-size:11px;cursor:pointer;"><input type="checkbox" value="${v}"> ${v}</label>`;
+      }).join('');
+
+      metricContainer.innerHTML = ALL_METRICS.map((m, i) => {
+        const checked = i < 4 ? 'checked' : '';
+        return `<label style="font-size:11px;cursor:pointer;"><input type="checkbox" value="${m.key}" ${checked}> ${m.key}</label>`;
+      }).join('');
+
+      renderVersionCompare();
+    }
+
+    function getFieldValue(row, metric) {
+      if (metric.jsonKey) {
+        try {
+          const params = JSON.parse(row.params_json || row.参数JSON || '{}');
+          return params[metric.jsonKey];
+        } catch (e) {
+          return null;
+        }
+      }
+      return row[metric.field];
+    }
+
+    function extractVersionPrefix(name) {
+      const match = name.match(/^(V\d+|v\d+)/i);
+      return match ? match[0].toUpperCase() : name;
+    }
+
+    function getSplitFromDataset(dataset) {
+      const ds = (dataset || '').toLowerCase();
+      if (ds.includes('train') && !ds.includes('test')) return 'train';
+      if (ds.includes('test')) return 'test';
+      if (ds.includes('holdout') || ds.includes('alpha_市场')) return 'holdout';
+      return null;
+    }
+
+    function renderVersionCompare() {
+      const thead = document.getElementById('compareHead');
+      const tbody = document.getElementById('compareBody');
+      const hint = document.getElementById('compareHint');
+      const splitFilter = document.getElementById('compareSplit').value;
+
+      const selectedVersions = Array.from(document.querySelectorAll('#versionCheckboxes input:checked')).map(el => el.value);
+      const selectedMetrics = Array.from(document.querySelectorAll('#metricCheckboxes input:checked')).map(el => el.value);
+
+      if (selectedVersions.length === 0 || selectedMetrics.length === 0) {
+        thead.innerHTML = '<th>请选择版本和指标</th>';
+        tbody.innerHTML = '';
+        hint.textContent = '提示：勾选至少1个版本和1个指标后点击"对比"按钮';
+        return;
+      }
+
+      const filteredMetrics = ALL_METRICS.filter(m => selectedMetrics.includes(m.key));
+
+      const splits = splitFilter === 'all' ? ['train', 'test', 'holdout'] : [splitFilter];
+
+      let headHtml = '<th>指标</th>';
+      selectedVersions.forEach(v => {
+        splits.forEach(s => {
+          headHtml += `<th>${v} (${s})</th>`;
+        });
+      });
+      thead.innerHTML = headHtml;
+
+      let bodyHtml = '';
+      filteredMetrics.forEach(m => {
+        bodyHtml += `<tr><td style="font-weight:500;">${m.key}</td>`;
+        selectedVersions.forEach(ver => {
+          splits.forEach(sp => {
+            const row = compareData.find(r => {
+              const name = r.实验名 || r.策略版本 || '';
+              const prefix = extractVersionPrefix(name);
+              const split = getSplitFromDataset(r.数据集);
+              return prefix === ver && split === sp;
+            });
+            const val = row ? getFieldValue(row, m) : null;
+            bodyHtml += `<td>${m.fmt(val)}</td>`;
+          });
+        });
+        bodyHtml += '</tr>';
+      });
+      tbody.innerHTML = bodyHtml;
+      hint.textContent = `已对比 ${selectedVersions.length} 个版本 × ${filteredMetrics.length} 个指标`;
+    }
+
+    ['f_version', 'f_split'].forEach(id => {
+      const node = document.getElementById(id);
+      if (node) node.addEventListener('change', updateChangeHint);
+      if (node) node.addEventListener('input', updateChangeHint);
+    });
+
+    reloadAll();
+  </script>
+</body>
+</html>
