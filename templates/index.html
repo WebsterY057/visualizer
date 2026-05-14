@@ -230,23 +230,23 @@
   <div class="content">
     <div class="stat-cards" id="statCards" style="display:none;"></div>
 
-    <!-- ========== K12 vs 小乌龟 盈亏对比 ========== -->
+    <!-- ========== K12 vs 龟12 盈亏对比 ========== -->
     <div class="chart-container" id="pnlCompareContainer" style="margin-bottom:16px;">
       <div class="chart-header">
-        <div class="chart-title">K12 vs 小乌龟 盈亏对比（本月）</div>
+        <div class="chart-title">K12 vs 龟12 盈亏对比（本月）</div>
         <div class="chart-meta" id="pnlCompareMeta"></div>
       </div>
       <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:12px;">
         <div style="background:#F0F2F5; border:1px solid #D8D8E0; border-radius:8px; padding:12px; text-align:center;">
-          <div style="font-size:11px; color:#888; margin-bottom:4px;">我们的总盈亏 (USDT)</div>
+          <div style="font-size:11px; color:#888; margin-bottom:4px;">跨12总盈亏 (USDT)</div>
           <div id="pnlK12Total" style="font-size:20px; font-weight:700; color:#4FA8D7;">-</div>
         </div>
         <div style="background:#F0F2F5; border:1px solid #D8D8E0; border-radius:8px; padding:12px; text-align:center;">
-          <div style="font-size:11px; color:#888; margin-bottom:4px;">小乌龟总盈亏 (USDT)</div>
+          <div style="font-size:11px; color:#888; margin-bottom:4px;">龟12总盈亏 (USDT)</div>
           <div id="pnlTurtleTotal" style="font-size:20px; font-weight:700; color:#2F9E44;">-</div>
         </div>
         <div style="background:#F0F2F5; border:1px solid #D8D8E0; border-radius:8px; padding:12px; text-align:center;">
-          <div style="font-size:11px; color:#888; margin-bottom:4px;">差距 (我们-龟)</div>
+          <div style="font-size:11px; color:#888; margin-bottom:4px;">差距 (我们-龟12)</div>
           <div id="pnlDiff" style="font-size:20px; font-weight:700;">-</div>
         </div>
       </div>
@@ -879,7 +879,7 @@ async function loadPnlCompare() {
             pointRadius: 4
           },
           {
-            label: '小乌龟 盈亏',
+            label: '龟12 盈亏',
             data: turtlePnl,
             borderColor: '#2F9E44',
             backgroundColor: 'rgba(47,158,68,0.1)',
@@ -918,21 +918,23 @@ async function loadPnlCompare() {
 
     thead.innerHTML = `<tr>
       <th>日期</th>
+      <th>K12 总盈亏</th>
+      <th>龟12 总盈亏</th>
       <th>K12 捆绑费</th>
-      <th>龟 捆绑费</th>
+      <th>龟12 捆绑费</th>
       <th>K12 Gas</th>
-      <th>龟 Gas</th>
+      <th>龟12 Gas</th>
       <th>K12 订单量</th>
-      <th>龟 订单量</th>
+      <th>龟12 订单量</th>
       <th>K12 成交量</th>
-      <th>龟 成交量</th>
-      <th>K12 Alpha</th>
-      <th>龟 Alpha</th>
+      <th>龟12 成交量</th>
     </tr>`;
 
     tbody.innerHTML = rows.map(r => `
       <tr>
         <td>${r.日期 || '-'}</td>
+        <td>${fmt(r.k12_pnl)}</td>
+        <td>${fmt(r.turtle_pnl)}</td>
         <td>${fmt(r.k12_bundle_fee)}</td>
         <td>${fmt(r.turtle_bundle_fee)}</td>
         <td>${fmt(r.k12_gas_fee)}</td>
@@ -941,8 +943,6 @@ async function loadPnlCompare() {
         <td>${r.turtle_orders || '0'}</td>
         <td>${fmt(r.k12_volume, 0)}</td>
         <td>${fmt(r.turtle_volume, 0)}</td>
-        <td>${fmt(r.k12_alpha)}</td>
-        <td>${fmt(r.turtle_alpha)}</td>
       </tr>
     `).join('');
 
