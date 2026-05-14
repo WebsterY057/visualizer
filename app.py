@@ -20,6 +20,7 @@ app.static_folder = 'static'
 ORDERS_K12_PATH = '/Users/yy/.hermes/workspace/db/orders_k12.db'
 ORDERS_TURTLE_PATH = '/Users/yy/.hermes/workspace/db/orders_turtle.db'
 ORDERS_BIGCOIN_PATH = '/Users/yy/.hermes/workspace/db/orders_bigcoin.db'
+K1K2_TOKEN_DB_PATH = '/Users/yy/.hermes/workspace/db/k1k2_token_orders.db'
 SUMMARY_DB_PATH = '/Users/yy/.hermes/workspace/db/summary.db'
 BACKTEST_DB_PATH = '/Users/yy/.hermes/workspace/db/backtest_experiments.db'
 SERVER_BACKTEST_DB_PATH = '/Users/yy/.hermes/workspace/db/backtest_server.db'
@@ -28,11 +29,19 @@ SERVER_BACKTEST_LIST_EXCLUDE_SQL = " AND (实验名 NOT LIKE '%Holdout_alpha_%')
 BACKTEST_REPORT_ROOT = '/Users/yy/.hermes/workspace/db/回测项目/量价关系信号_alpha市场/报告'
 MAX_ROWS = 50000
 
+# 「数据查询」Tab 仅允许连接以下 5 个库（SQL 查询 / 该 Tab 下拉）
+QUERY_DATABASES = {
+    'summary': {'name': '汇总数据库 summary.db', 'path': SUMMARY_DB_PATH},
+    'orders_bigcoin': {'name': '大币订单 orders_bigcoin.db', 'path': ORDERS_BIGCOIN_PATH},
+    'orders_k12': {'name': 'K12 订单 orders_k12.db', 'path': ORDERS_K12_PATH},
+    'orders_turtle': {'name': '小乌龟订单 orders_turtle.db', 'path': ORDERS_TURTLE_PATH},
+    'k1k2_token': {'name': 'K1K2 综合订单 k1k2_token_orders.db', 'path': K1K2_TOKEN_DB_PATH},
+}
+
+# 「数据分析」Tab：订单/汇总 + 可选浏览回测库表结构
 DATABASES = {
-    'orders_k12':    {'name': 'K12订单数据库',    'path': ORDERS_K12_PATH},
-    'orders_turtle': {'name': '小乌龟订单数据库', 'path': ORDERS_TURTLE_PATH},
-    'orders_bigcoin':{'name': '大币订单数据库',  'path': ORDERS_BIGCOIN_PATH},
-    'summary':       {'name': '汇总数据库',       'path': SUMMARY_DB_PATH},
+    **QUERY_DATABASES,
+    'backtest': {'name': '回测实验 backtest_experiments.db', 'path': BACKTEST_DB_PATH},
 }
 
 # 启动时扫描所有表所在的数据库，建立映射
@@ -109,8 +118,6 @@ def get_db_path(table=None, db=None):
         db_key = TABLE_TO_DB[table]
         if db_key in DATABASES:
             return DATABASES[db_key]['path']
-        if db_key == 'backtest':
-            return BACKTEST_DB_PATH
     return SUMMARY_DB_PATH
 
 # ============================================================
@@ -494,9 +501,11 @@ def backtest():
 
 @app.route('/api/databases')
 def api_databases():
-    """获取所有数据库及其表"""
+    """获取数据库及其表。scope=query 时仅返回「数据查询」Tab 用的 5 个库；默认给「数据分析」Tab。"""
+    scope = (request.args.get('scope') or 'analysis').strip().lower()
+    dbs = QUERY_DATABASES if scope == 'query' else DATABASES
     result = {}
-    for db_key, db_info in DATABASES.items():
+    for db_key, db_info in dbs.items():
         conn = sqlite3.connect(db_info['path'])
         cur = conn.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -549,7 +558,10 @@ def api_sql_query():
     if not sql:
         return jsonify({'error': 'SQL不能为空'}), 400
 
-    db_path = get_db_path(db=db_key)
+    if not db_key or db_key not in QUERY_DATABASES:
+        return jsonify({'error': '请选择有效的数据库（数据查询仅支持订单与汇总库）'}), 400
+
+    db_path = QUERY_DATABASES[db_key]['path']
 
     import re
     limit_match = re.search(r'\bLIMIT\s+(\d+)\s*(OFFSET\s+\d+)?$', sql, re.IGNORECASE)
@@ -620,13 +632,20 @@ def api_nl_query():
 
     import re
 
-    db_map = {
-        'orders_k12': {'name': 'orders_k12', 'prefix': 'k1_订单数据_', 'db_path': '/Users/yy/.hermes/workspace/db/orders_k12.db'},
-        'orders_turtle': {'name': 'orders_turtle', 'prefix': 'guik1_订单数据_', 'db_path': '/Users/yy/.hermes/workspace/db/orders_turtle.db'},
-        'orders_bigcoin': {'name': 'orders_bigcoin', 'prefix': 'k1_订单数据_', 'db_path': '/Users/yy/.hermes/workspace/db/orders_bigcoin.db'},
+    nl_prefix = {
+        'orders_k12': 'k1_订单数据_',
+        'orders_turtle': 'guik1_订单数据_',
+        'orders_bigcoin': 'k1_订单数据_',
+        'summary': '',
+        'k1k2_token': '',
     }
-
-    current_db = db_map.get(db_key, db_map['orders_k12'])
+    if db_key not in DATABASES:
+        db_key = 'orders_k12'
+    current_db = {
+        'name': db_key,
+        'prefix': nl_prefix.get(db_key, ''),
+        'db_path': DATABASES[db_key]['path'],
+    }
     db_path = current_db['db_path']
     prefix = current_db['prefix']
 
@@ -1798,6 +1817,97 @@ def api_backtest_trade_markers(exp_id):
         return jsonify({'data': rows})
     except Exception as e:
         logger.error(f"trade_markers查询失败: {e}")
+        return jsonify({'data': [], 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/trade_analysis/<int:exp_id>')
+def api_backtest_trade_analysis(exp_id):
+    try:
+        conn = sqlite3.connect(BACKTEST_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        # Get bar data with VWAP and indicators
+        cur.execute("""
+            SELECT bar_index, timestamp, open, high, low, close, volume, quote_volume, trades as n_trades, signal
+            FROM bar_data WHERE exp_id = ? ORDER BY timestamp
+        """, (exp_id,))
+        bar_rows = [dict(r) for r in cur.fetchall()]
+
+        # Compute VWAP and indicators per bar
+        bars_with_indicators = []
+        cum_pv = 0.0
+        cum_vol = 0.0
+        for i, bar in enumerate(bar_rows):
+            price = (bar['high'] + bar['low'] + bar['close']) / 3
+            vol = bar['volume'] or 0
+            cum_pv += price * vol
+            cum_vol += vol
+            vwap = cum_pv / cum_vol if cum_vol > 0 else price
+
+            price_change = ((bar['close'] - bar_rows[i-1]['close']) / bar_rows[i-1]['close'] * 100) if i > 0 and bar_rows[i-1]['close'] else 0
+            hl_range = (bar['high'] - bar['low']) / bar['low'] * 100 if bar['low'] else 0
+            bar_close = price
+
+            bars_with_indicators.append({
+                'ts': bar['timestamp'],
+                'close': bar['close'],
+                'volume': vol,
+                'quote_volume': bar['quote_volume'] or 0,
+                'n_trades': bar['n_trades'] or 0,
+                'price_change_pct': round(price_change, 4),
+                'hl_range_pct': round(hl_range, 4),
+                'vwap': round(vwap, 8),
+                'signal': bar['signal'],
+            })
+
+        # Get trade markers
+        cur.execute("""
+            SELECT id, timestamp, token, signal_type, price, quantity, notional_usd, side, exit_reason
+            FROM trade_markers WHERE exp_id = ? ORDER BY timestamp
+        """, (exp_id,))
+        trades = [dict(r) for r in cur.fetchall()]
+        conn.close()
+
+        # Match each trade to its closest bar and compute indicators
+        trade_data = []
+        for t in trades:
+            ts = t['timestamp']
+            # Find the bar closest to this trade timestamp
+            best_bar = None
+            for b in bars_with_indicators:
+                if b['ts'] <= ts:
+                    best_bar = b
+                else:
+                    break
+
+            if best_bar:
+                avg_notional = best_bar['quote_volume'] / best_bar['n_trades'] if best_bar['n_trades'] > 0 else 0
+                trade_data.append({
+                    'id': t['id'],
+                    'timestamp': ts,
+                    'token': t['token'],
+                    'signal_type': t['signal_type'],
+                    'price': t['price'],
+                    'notional_usd': t['notional_usd'],
+                    'side': t['side'],
+                    'bar_close': best_bar['close'],
+                    'volume': best_bar['volume'],
+                    'quote_volume': best_bar['quote_volume'],
+                    'n_trades': best_bar['n_trades'],
+                    'price_change_pct': best_bar['price_change_pct'],
+                    'hl_range_pct': best_bar['hl_range_pct'],
+                    'vwap': best_bar['vwap'],
+                    'avg_trade_notional': round(avg_notional, 4),
+                    'price_vs_vwap': round((t['price'] - best_bar['vwap']) / best_bar['vwap'] * 100, 4) if best_bar['vwap'] else 0,
+                })
+
+        return jsonify({'data': trade_data, 'indicators': [
+            'price_change_pct', 'hl_range_pct', 'volume', 'quote_volume',
+            'n_trades', 'vwap', 'avg_trade_notional', 'price_vs_vwap', 'notional_usd'
+        ]})
+    except Exception as e:
+        logger.error(f"trade_analysis查询失败: {e}")
         return jsonify({'data': [], 'error': str(e)}), 500
 
 

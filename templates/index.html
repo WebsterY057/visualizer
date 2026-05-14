@@ -346,14 +346,54 @@
 
 <!-- ========== 参数优化面板 ========== -->
 <div id="optimizationPanel" style="display:none; width:100%; padding: 20px;">
-  <div class="panel-section">
-    <div class="panel-title">参数优化实验</div>
-    <div style="display:flex;gap:8px;margin-bottom:12px;">
-      <input type="text" id="optSearch" placeholder="搜索..." style="flex:1;background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:6px;border-radius:6px;">
-      <button onclick="Optimization.loadList()" style="padding:6px 12px;background:var(--sky);border:none;border-radius:6px;color:#111;cursor:pointer;">刷新</button>
+  <div style="display:grid; grid-template-columns: 360px 1fr; gap: 14px;">
+    <div>
+      <div class="panel-section">
+        <div class="panel-title">优化实验</div>
+        <div id="optListWrap" style="max-height:500px;overflow:auto;"></div>
+      </div>
     </div>
-    <div id="optListWrap" style="max-height:500px;overflow:auto;"></div>
-    <div id="optHeatmapGallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:16px;"></div>
+    <div>
+      <div class="panel-section">
+        <div class="panel-title">交易分析热力图</div>
+        <div id="optControls" style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+          <select id="optExpSelect" onchange="Optimization.loadTradeData()" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:4px 8px;border-radius:4px;font-size:12px;min-width:120px;">
+            <option value="">-- 选择实验 --</option>
+          </select>
+          <select id="optXAxis" onchange="Optimization.renderChart()" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:4px 8px;border-radius:4px;font-size:12px;">
+            <option value="price_change_pct">价格变化%</option>
+            <option value="hl_range_pct">高低波幅%</option>
+            <option value="volume">成交量</option>
+            <option value="quote_volume">成交额USDT</option>
+            <option value="n_trades">笔数</option>
+            <option value="avg_trade_notional">单笔均额</option>
+            <option value="price_vs_vwap">价格偏离VWAP%</option>
+            <option value="notional_usd">交易额</option>
+          </select>
+          <span style="color:#888;font-size:12px;">→</span>
+          <select id="optYAxis" onchange="Optimization.renderChart()" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:4px 8px;border-radius:4px;font-size:12px;">
+            <option value="price_change_pct">价格变化%</option>
+            <option value="hl_range_pct" selected>高低波幅%</option>
+            <option value="volume">成交量</option>
+            <option value="quote_volume">成交额USDT</option>
+            <option value="n_trades">笔数</option>
+            <option value="avg_trade_notional">单笔均额</option>
+            <option value="price_vs_vwap">价格偏离VWAP%</option>
+            <option value="notional_usd">交易额</option>
+          </select>
+          <label style="color:#888;font-size:12px;display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="optShowBuys" checked onchange="Optimization.renderChart()"> 买入
+          </label>
+          <label style="color:#888;font-size:12px;display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="optShowSells" checked onchange="Optimization.renderChart()"> 卖出
+          </label>
+        </div>
+        <div style="position:relative;height:400px;">
+          <canvas id="optHeatmapChart"></canvas>
+        </div>
+        <div id="optStats" style="margin-top:8px;font-size:12px;color:#888;"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -367,9 +407,6 @@
           <label class="ctrl-label">数据库</label>
           <select id="qDb" onchange="Query.loadTables()">
             <option value="">-- 选择数据库 --</option>
-            <option value="backtest">回测实验</option>
-            <option value="orders_k12">Orders K12</option>
-            <option value="orders_summary">Orders Summary</option>
           </select>
         </div>
         <div class="ctrl-group">
@@ -397,9 +434,9 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const DB_PATH = '/Users/yy/.hermes/workspace/db/analysis.db';
 let meta = {};
 let dbList = {};
+let queryDbList = {};
 let currentChart = null;
 let chartType = 'line';
 let currentData = [];
@@ -411,12 +448,27 @@ let yFieldsOptions = [];
 let selectedTables = [];
 let selectedFields = [];
 
+function populateQueryDbSelect() {
+  const qDb = document.getElementById('qDb');
+  if (!qDb || !queryDbList) return;
+  qDb.innerHTML = '<option value="">-- 选择数据库 --</option>';
+  Object.entries(queryDbList).forEach(([key, info]) => {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = info.name;
+    qDb.appendChild(opt);
+  });
+}
+
 // ============================================================
 // 初始化
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
   const resp = await fetch('/api/databases');
   dbList = await resp.json();
+
+  const respQuery = await fetch('/api/databases?scope=query');
+  queryDbList = await respQuery.json();
 
   const dbSel = document.getElementById('dbSelect');
   Object.entries(dbList).forEach(([key, info]) => {
@@ -425,6 +477,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     opt.textContent = info.name;
     dbSel.appendChild(opt);
   });
+
+  populateQueryDbSelect();
 
   loadPnlCompare();
 });
@@ -1193,7 +1247,7 @@ function exportCSV() {
 // ============================================================
 
 async function applyPreset(preset) {
-  document.getElementById('dbSelect').value = 'analysis';
+  document.getElementById('dbSelect').value = 'summary';
   await onDbChange();
   document.getElementById('tableSelect').value = 'k12_token_spread_size_daily_v2';
   await onTableChange();
@@ -1301,10 +1355,10 @@ function showTab(tab, el) {
   document.getElementById('queryPanel').style.display = tab === 'queryPanel' ? 'block' : 'none';
   currentTab = tab;
   if (tab === 'analysis') loadPnlCompare();
-  if (tab === 'queryPanel') Query.loadTables();
+  if (tab === 'queryPanel') populateQueryDbSelect();
   if (tab === 'backtestPanel' && Backtest._listData.length === 0) Backtest.loadList();
-  // 每次进入都刷新，避免沿用旧版表格 DOM（例如新增「回测时间」列后仍显示缓存）
   if (tab === 'serverBacktestPanel') ServerBacktest.loadList();
+  if (tab === 'optimizationPanel') Optimization.loadList();
 }
 
 // ============================================================
@@ -2048,27 +2102,54 @@ const ServerBacktest = {
 // ============================================================
 const Optimization = {
   _initialized: false,
+  _tradeData: [],
 
   async loadList() {
     try {
-      const resp = await fetch('/api/backtest/experiments?type=optimization');
-      const list = await resp.json();
+      const [backtestResp, serverResp] = await Promise.all([
+        fetch('/api/backtest/experiments'),
+        fetch('/api/server_backtest/experiments')
+      ]);
+      const btResult = await backtestResp.json();
+      let btList = btResult.data || [];
+      let serverList = [];
+      try {
+        const srvResult = await serverResp.json();
+        serverList = (srvResult.data || []).map(e => ({ ...e, _source: '服务器' }));
+      } catch {}
+
+      const allList = [...btList, ...serverList];
       const wrap = document.getElementById('optListWrap');
-      if (!list || !list.length) {
-        wrap.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无优化实验</div>';
+      const sel = document.getElementById('optExpSelect');
+      if (!allList || !allList.length) {
+        wrap.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无实验数据</div>';
         return;
       }
-      let html = '<div style="display:grid;gap:12px;">';
-      list.slice(0, 20).forEach(exp => {
+      let html = '<div style="display:grid;gap:6px;">';
+      sel.innerHTML = '<option value="">-- 选择实验 --</option>';
+      const seen = new Set();
+      allList.slice(0, 100).forEach(exp => {
+        if (seen.has(exp.id)) return;
+        seen.add(exp.id);
+        const src = exp._source || '本地';
+        const label = `${src} | ${exp.param_summary || exp.experiment_name || '实验' + exp.id} (${(exp.total_return_pct||0).toFixed(2)}%)`;
+        sel.innerHTML += `<option value="${exp.id}">${label}</option>`;
+      });
+      // Local experiments in the left list too
+      btList.slice(0, 50).forEach(exp => {
         html += `
-          <div style="background:#353538;padding:16px;border-radius:8px;cursor:pointer;" onclick="Optimization.showDetail(${exp.id})">
-            <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-              <span style="font-weight:600;">${exp.param_summary || exp.参数摘要 || '实验' + exp.id}</span>
-              <span style="color:${(exp.total_return_pct||0)>=0?'#4CAF82':'#E05C5C'};">${(exp.total_return_pct||0).toFixed(2)}%</span>
-            </div>
-            <div style="color:#888;font-size:12px;">${exp.change_summary || exp.改动点 || '-'}</div>
-          </div>
-        `;
+          <div style="background:#353538;padding:12px;border-radius:6px;cursor:pointer;border-left:3px solid ${(exp.total_return_pct||0)>=0?'#4CAF82':'#E05C5C'};" onclick="Optimization.selectExperiment(${exp.id})">
+            <div style="font-size:12px;color:#aaa;">${exp.param_summary || exp.experiment_name || '实验' + exp.id}</div>
+            <div style="font-size:11px;color:#666;margin-top:2px;">版本 ${exp.strategy_version||'-'} | ${exp.split_name||'-'} | ${(exp.total_return_pct||0).toFixed(2)}%</div>
+          </div>`;
+      });
+      // Server experiments
+      serverList.slice(0, 20).forEach(exp => {
+        html += `
+          <div style="background:#353538;padding:12px;border-radius:6px;cursor:pointer;border-left:3px solid ${(exp.total_return_pct||0)>=0?'#4CAF82':'#E05C5C'};" onclick="Optimization.selectExperiment(${exp.id})">
+            <div style="font-size:12px;color:#aaa;">服务器 | ${exp.experiment_name || '实验' + exp.id}</div>
+            <div style="font-size:11px;color:#666;margin-top:2px;">${(exp.total_return_pct||0).toFixed(2)}%</div>
+          </div>`;
       });
       html += '</div>';
       wrap.innerHTML = html;
@@ -2077,8 +2158,215 @@ const Optimization = {
     }
   },
 
-  showDetail(id) {
-    document.getElementById('optHeatmapGallery').innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无可视化数据</div>';
+  selectExperiment(id) {
+    document.getElementById('optExpSelect').value = id;
+    this.loadTradeData();
+  },
+
+  async loadTradeData() {
+    const id = document.getElementById('optExpSelect').value;
+    if (!id) return;
+    try {
+      const resp = await fetch(`/api/backtest/trade_analysis/${id}`);
+      const result = await resp.json();
+      this._tradeData = result.data || [];
+      document.getElementById('optStats').textContent = `共 ${this._tradeData.length} 笔交易`;
+      this.renderChart();
+    } catch (e) {
+      document.getElementById('optStats').textContent = `加载失败: ${e.message}`;
+    }
+  },
+
+  renderChart() {
+    const canvas = document.getElementById('optHeatmapChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.parentElement.clientWidth || 600;
+    const H = 400;
+    canvas.width = W * 2;
+    canvas.height = H * 2;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.scale(2, 2);
+
+    const xField = document.getElementById('optXAxis').value;
+    const yField = document.getElementById('optYAxis').value;
+    const showBuys = document.getElementById('optShowBuys').checked;
+    const showSells = document.getElementById('optShowSells').checked;
+
+    let points = this._tradeData.filter(t => {
+      if (t.signal_type === 'buy' && !showBuys) return false;
+      if (t.signal_type === 'sell' && !showSells) return false;
+      return t[xField] != null && t[yField] != null && isFinite(t[xField]) && isFinite(t[yField]);
+    });
+
+    if (window.optChartInstance) {
+      window.optChartInstance.destroy();
+      window.optChartInstance = null;
+    }
+
+    const fieldNames = {
+      price_change_pct: '价格变化%',
+      hl_range_pct: '高低波幅%',
+      volume: '成交量',
+      quote_volume: '成交额USDT',
+      n_trades: '笔数',
+      avg_trade_notional: '单笔均额',
+      price_vs_vwap: '偏离VWAP%',
+      notional_usd: '交易额',
+    };
+
+    if (!points.length) {
+      ctx.fillStyle = '#555';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('无匹配数据', W/2, H/2);
+      document.getElementById('optStats').textContent = '无匹配数据';
+      return;
+    }
+
+    // Determine range with percentile clipping to avoid outliers
+    const valsX = points.map(p => p[xField]).sort((a,b) => a-b);
+    const valsY = points.map(p => p[yField]).sort((a,b) => a-b);
+    const loX = valsX[Math.floor(valsX.length * 0.02)] || valsX[0];
+    const hiX = valsX[Math.ceil(valsX.length * 0.98)] || valsX[valsX.length-1];
+    const loY = valsY[Math.floor(valsY.length * 0.02)] || valsY[0];
+    const hiY = valsY[Math.ceil(valsY.length * 0.98)] || valsY[valsY.length-1];
+    const rangeX = hiX - loX || 1;
+    const rangeY = hiY - loY || 1;
+
+    // Binning
+    const BINS = 25;
+    const margin = { top: 30, bottom: 40, left: 60, right: 20 };
+    const plotW = W - margin.left - margin.right;
+    const plotH = H - margin.top - margin.bottom;
+    const binW = plotW / BINS;
+    const binH = plotH / BINS;
+
+    // Initialize bins
+    const bins = [];
+    for (let i = 0; i < BINS; i++) {
+      bins[i] = [];
+      for (let j = 0; j < BINS; j++) {
+        bins[i][j] = { count: 0, profit: 0, wins: 0, losses: 0 };
+      }
+    }
+
+    // Fill bins
+    points.forEach(p => {
+      const xi = Math.min(BINS - 1, Math.max(0, Math.floor((p[xField] - loX) / rangeX * BINS)));
+      const yi = Math.min(BINS - 1, Math.max(0, Math.floor((p[yField] - loY) / rangeY * BINS)));
+      const b = bins[xi][yi];
+      b.count++;
+      b.profit += p.notional_usd || 0;
+      if ((p.notional_usd || 0) > 0) b.wins++;
+      else b.losses++;
+    });
+
+    // Find max count for color scaling
+    let maxCount = 0;
+    bins.forEach(row => row.forEach(b => { if (b.count > maxCount) maxCount = b.count; }));
+    maxCount = Math.max(maxCount, 1);
+
+    // Draw heatmap
+    for (let i = 0; i < BINS; i++) {
+      for (let j = 0; j < BINS; j++) {
+        const b = bins[i][j];
+        if (b.count === 0) continue;
+
+        const x = margin.left + i * binW;
+        const y = margin.top + j * binH;
+        const intensity = b.count / maxCount;
+        const avgProfit = b.profit / b.count;
+
+        // Color: green for profit, red for loss, intensity by |avg profit|
+        const profitNorm = Math.tanh(Math.abs(avgProfit) / 100); // 0~1 scale
+        let r, g, bl;
+        if (avgProfit > 0) {
+          r = Math.round(40 * (1 - profitNorm) + 30 * profitNorm);
+          g = Math.round(60 * (1 - profitNorm) + 200 * profitNorm);
+          bl = Math.round(40 * (1 - profitNorm) + 30 * profitNorm);
+        } else {
+          r = Math.round(40 * (1 - profitNorm) + 220 * profitNorm);
+          g = Math.round(60 * (1 - profitNorm) + 40 * profitNorm);
+          bl = Math.round(40 * (1 - profitNorm) + 40 * profitNorm);
+        }
+        // Apply trade density intensity
+        r = Math.round(r * (0.3 + 0.7 * intensity));
+        g = Math.round(g * (0.3 + 0.7 * intensity));
+        bl = Math.round(bl * (0.3 + 0.7 * intensity));
+
+        ctx.fillStyle = `rgb(${r},${g},${bl})`;
+        ctx.fillRect(x, y, binW, binH);
+        ctx.strokeStyle = '#1E1E22';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(x, y, binW, binH);
+      }
+    }
+
+    // Labels and title
+    ctx.fillStyle = '#888';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    // X-axis labels
+    for (let i = 0; i <= BINS; i += 5) {
+      const val = loX + (rangeX * i / BINS);
+      const x = margin.left + i * binW;
+      ctx.fillText(val.toFixed(2), x, margin.top + plotH + 5);
+    }
+
+    // Y-axis labels
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let j = 0; j <= BINS; j += 5) {
+      const val = loY + (rangeY * j / BINS);
+      const y = margin.top + j * binH;
+      ctx.fillText(val.toFixed(2), margin.left - 5, y);
+    }
+
+    // Axis titles
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#aaa';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(fieldNames[xField] || xField, margin.left + plotW / 2, H - 15);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.save();
+    ctx.translate(12, margin.top + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText(fieldNames[yField] || yField, 0, 0);
+    ctx.restore();
+
+    // Legend
+    const legX = W - 120;
+    const legY = 5;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#888';
+    ctx.fillText('盈亏', legX, legY);
+    for (let k = 0; k <= 10; k++) {
+      const f = k / 10;
+      const lx = legX + k * 10;
+      const r2 = Math.round(220 * (1 - f));
+      const g2 = Math.round(200 * f);
+      ctx.fillStyle = `rgb(${r2},${g2},40)`;
+      ctx.fillRect(lx, legY + 14, 10, 12);
+    }
+    ctx.fillStyle = '#888';
+    ctx.fillText('亏损', legX, legY + 28);
+    ctx.textAlign = 'right';
+    ctx.fillText('盈利', legX + 100, legY + 28);
+
+    // Stats
+    const wins = points.filter(t => (t.notional_usd || 0) > 0).length;
+    const losses = points.filter(t => (t.notional_usd || 0) <= 0).length;
+    document.getElementById('optStats').textContent =
+      `共 ${points.length} 笔 | 盈利 ${wins} (${(wins/points.length*100).toFixed(1)}%) | 亏损 ${losses} (${(losses/points.length*100).toFixed(1)}%)`;
   }
 };
 
