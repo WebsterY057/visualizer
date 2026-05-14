@@ -297,21 +297,26 @@
 
 <!-- ========== 回测实验面板 ========== -->
 <div id="backtestPanel" style="display:none; width:100%; padding: 20px;">
-  <div style="display:grid; grid-template-columns: 360px 1fr; gap: 14px;">
-    <div>
-      <div class="panel-section">
-        <div class="panel-title">回测实验列表</div>
-        <div style="display:flex;gap:8px;margin-bottom:8px;">
-          <input type="text" id="btSearch" placeholder="搜索..." style="flex:1;background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:6px;border-radius:6px;" oninput="Backtest.filterList()">
-          <button onclick="Backtest.loadList()" style="padding:6px 12px;background:var(--sky);border:none;border-radius:6px;color:#111;cursor:pointer;">刷新</button>
-        </div>
-        <div id="btListWrap" style="max-height:400px;overflow:auto;"></div>
+  <div id="btDetailEmpty" style="padding:40px;text-align:center;color:var(--gray-4);">← 点击下方列表选择实验查看详情</div>
+  <div id="btDetailContent" style="display:none;">
+    <!-- 统计卡片 -->
+    <div id="btStatCards" style="display:none; margin-bottom:12px;"></div>
+    <!-- 组合净值曲线 -->
+    <div class="chart-container" id="btEquityChartContainer" style="display:none; margin-bottom:12px;">
+      <div class="chart-header">
+        <div class="chart-title">组合净值曲线</div>
+        <div class="chart-meta" id="btEquityChartMeta"></div>
+      </div>
+      <div style="height:220px; overflow:hidden;">
+        <canvas id="btEquityChart"></canvas>
       </div>
     </div>
-    <div>
-      <div id="btDetailEmpty" style="padding:40px;text-align:center;color:var(--gray-4);">点击左侧实验查看详情</div>
-      <div id="btDetailContent" style="display:none;"></div>
-    </div>
+    <!-- 详细信息 -->
+    <div id="btDetailInfo" style="margin-bottom:16px;"></div>
+  </div>
+  <div class="panel-section" style="margin-top:8px;">
+    <div class="panel-title">回测实验列表</div>
+    <div id="btListWrap" style="max-height:calc(100vh - 300px);overflow:auto;"></div>
   </div>
 </div>
 
@@ -321,10 +326,6 @@
     <div>
       <div class="panel-section">
         <div class="panel-title">服务器回测列表</div>
-        <div style="display:flex;gap:8px;margin-bottom:8px;">
-          <input type="text" id="sbtSearch" placeholder="搜索..." style="flex:1;background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:6px;border-radius:6px;" oninput="ServerBacktest.filterList()">
-          <button onclick="ServerBacktest.loadList()" style="padding:6px 12px;background:var(--sky);border:none;border-radius:6px;color:#111;cursor:pointer;">刷新</button>
-        </div>
         <div id="sbtListWrap" style="max-height:400px;overflow:auto;"></div>
       </div>
     </div>
@@ -1286,13 +1287,15 @@ function showTab(tab, el) {
   document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('analysisPanel').style.display = tab === 'analysis' ? 'flex' : 'none';
-  document.getElementById('backtestPanel').style.display = tab === 'backtest' ? 'block' : 'none';
+  document.getElementById('backtestPanel').style.display = tab === 'backtestPanel' ? 'block' : 'none';
   document.getElementById('serverBacktestPanel').style.display = tab === 'serverBacktestPanel' ? 'block' : 'none';
   document.getElementById('optimizationPanel').style.display = tab === 'optimizationPanel' ? 'block' : 'none';
   document.getElementById('queryPanel').style.display = tab === 'queryPanel' ? 'block' : 'none';
   currentTab = tab;
   if (tab === 'analysis') loadPnlCompare();
   if (tab === 'queryPanel') Query.loadTables();
+  if (tab === 'backtestPanel' && Backtest._listData.length === 0) Backtest.loadList();
+  if (tab === 'serverBacktestPanel' && !ServerBacktest._loaded) ServerBacktest.loadList();
 }
 
 // ============================================================
@@ -1593,80 +1596,239 @@ function renderTrueHeatmap(data) {
 // 回测实验
 // ============================================================
 const Backtest = {
+  _sortField: 'strategy_version',
+  _sortDir: 'desc',
+  _datasetFilter: '',
+  _searchFilter: '',
+  _listData: [],
+
   async loadList() {
     try {
       const resp = await fetch('/api/backtest/list');
       const list = await resp.json();
-      const wrap = document.getElementById('btListWrap');
-      if (!list || !list.length) {
-        wrap.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无数据</div>';
-        return;
-      }
-      let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;color:#bbb;">';
-      html += '<thead><tr style="background:#353538;"><th style="padding:8px;text-align:left;">实验名</th><th style="padding:8px;">版本</th><th style="padding:8px;">数据集</th><th style="padding:8px;">收益</th></tr></thead><tbody>';
-      list.slice(0, 50).forEach(exp => {
-        const ret = exp.total_return_pct || exp.总收益率 || 0;
-        const cls = ret >= 0 ? '#4CAF82' : '#E05C5C';
-        html += `<tr style="cursor:pointer" onclick="Backtest.showDetail(${exp.id})">`;
-        html += `<td style="padding:8px;border-bottom:1px solid #404044;">${exp.experiment_name || exp.实验名 || exp.id}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #404044;">${exp.strategy_version || exp.策略版本 || '-'}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #404044;">${exp.split_name || exp.数据集 || '-'}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #404044;color:${cls};">${ret.toFixed(2)}%</td>`;
-        html += '</tr>';
-      });
-      html += '</tbody></table>';
-      wrap.innerHTML = html;
+      this._listData = list || [];
+      this.renderList();
     } catch (e) {
       document.getElementById('btListWrap').innerHTML = `<div style="color:#E05C5C;padding:20px;">加载失败: ${e.message}</div>`;
     }
   },
 
+  renderList() {
+    const wrap = document.getElementById('btListWrap');
+    if (!this._listData || !this._listData.length) {
+      wrap.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无数据</div>';
+      return;
+    }
+
+    let data = [...this._listData];
+    if (this._datasetFilter) {
+      data = data.filter(exp => (exp.split_name || exp.数据集 || '') === this._datasetFilter);
+    }
+    data.sort((a, b) => {
+      let aVal = a[this._sortField] || 0;
+      let bVal = b[this._sortField] || 0;
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+      if (aVal < bVal) return this._sortDir === 'asc' ? -1 : 1;
+      if (aVal > bVal) return this._sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    const arrow = (field) => {
+      if (this._sortField !== field) return '↕';
+      return this._sortDir === 'asc' ? '↑' : '↓';
+    };
+
+    let html = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <span style="font-size:12px;color:#888;">数据集:</span>
+      <select id="btDatasetFilter" onchange="Backtest.setDatasetFilter(this.value)" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:4px 8px;border-radius:4px;font-size:12px;width:120px;">
+        <option value="">全部</option>
+        ${[...new Set(this._listData.map(e => e.split_name || e.数据集 || ''))].filter(Boolean).map(s => `<option value="${s}" ${this._datasetFilter === s ? 'selected' : ''}>${s}</option>`).join('')}
+      </select>
+      <span style="font-size:11px;color:#666;">(点击表头排序)</span>
+    </div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;color:#bbb;">';
+    html += `<thead><tr style="background:#2A2A2E;">
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('created_at')">时间 ${arrow('created_at')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('experiment_name')">实验名 ${arrow('experiment_name')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('strategy_version')">版本 ${arrow('strategy_version')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('split_name')">数据集 ${arrow('split_name')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('total_return_pct')">收益率 ${arrow('total_return_pct')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('max_drawdown_pct')">最大回撤 ${arrow('max_drawdown_pct')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('trades')">交易次数 ${arrow('trades')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('sharpe')">夏普 ${arrow('sharpe')}</th>
+    </tr></thead><tbody>`;
+    data.slice(0, 50).forEach(exp => {
+      const ret = exp.total_return_pct || exp.总收益率 || 0;
+      const dd = exp.max_drawdown_pct || exp.最大回撤 || 0;
+      const sharpe = exp.sharpe || 0;
+      const trades = exp.trades || exp.交易次数 || 0;
+      const created = exp.created_at ? exp.created_at.slice(5, 19) : '-';
+      const cls = ret >= 0 ? '#4CAF82' : '#E05C5C';
+      html += `<tr style="cursor:pointer;background:var(--gray-2);" onmouseover="this.style.background='var(--gray-3)'" onmouseout="this.style.background='var(--gray-2)'" onclick="Backtest.showDetail(${exp.id})">`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${created}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${exp.experiment_name || exp.实验名 || exp.id}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${exp.strategy_version || exp.策略版本 || '-'}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${exp.split_name || exp.数据集 || '-'}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:${cls};font-weight:700;">${ret.toFixed(1)}%</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#ff7777;font-weight:600;">${dd.toFixed(1)}%</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${trades.toLocaleString()}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${sharpe.toFixed(2)}</td>`;
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  },
+
+  setSort(field) {
+    if (this._sortField === field) {
+      this._sortDir = this._sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this._sortField = field;
+      this._sortDir = 'desc';
+    }
+    this.renderList();
+  },
+
+  setDatasetFilter(val) {
+    this._datasetFilter = val;
+    this.renderList();
+  },
+
   async showDetail(id) {
-    document.getElementById('btDetailEmpty').style.display = 'none';
-    document.getElementById('btDetailContent').style.display = 'block';
-    document.getElementById('btDetailContent').innerHTML = '<div style="padding:40px;text-align:center;color:#888;">加载中...</div>';
+    const btDetailEmpty = document.getElementById('btDetailEmpty');
+    const btDetailContent = document.getElementById('btDetailContent');
+    const btStatCards = document.getElementById('btStatCards');
+    const btEquityChartContainer = document.getElementById('btEquityChartContainer');
+    const btEquityChartMeta = document.getElementById('btEquityChartMeta');
+    const btDetailInfo = document.getElementById('btDetailInfo');
+    if (!btDetailEmpty || !btDetailContent) { console.error('Missing detail elements'); return; }
+    btDetailEmpty.style.display = 'none';
+    btDetailContent.style.display = 'block';
+    btDetailContent.innerHTML = '<div style="padding:40px;text-align:center;color:#888;">加载中...</div>';
     try {
-      const resp = await fetch(`/api/backtest/detail/${id}`);
-      const d = await resp.json();
+      const [detailResp, equityResp] = await Promise.all([
+        fetch(`/api/backtest/detail/${id}`),
+        fetch(`/api/backtest/equity_curve/${id}`)
+      ]);
+      if (!detailResp.ok) throw new Error(`Detail API error: ${detailResp.status}`);
+      if (!equityResp.ok) throw new Error(`Equity API error: ${equityResp.status}`);
+      const d = await detailResp.json();
+      if (d.error) throw new Error(d.error);
+      const equityData = await equityResp.json();
+
       const ret = d.total_return_pct || d.总收益率 || 0;
       const dd = d.max_drawdown_pct || d.最大回撤 || 0;
-      const html = `
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
-          <div style="background:#353538;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">收益</div>
-            <div style="color:${ret>=0?'#4CAF82':'#E05C5C'};font-size:24px;font-weight:bold;">${ret.toFixed(2)}%</div>
+      const volume = d.trade_volume || d.成交量USD || 0;
+      const profitPerVol = d.profit_per_volume || d.成交额比率 || 0;
+      const version = d.strategy_version || d.策略版本 || '-';
+      const sharpe = d.sharpe || 0;
+      const winRate = d.win_rate_pct || d.胜率 || 0;
+      const trades = d.trades || d.交易次数 || 0;
+
+      const fmtK = v => v >= 0 ? `+${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      btDetailContent.innerHTML = `
+        <div id="btStatCards2" style="display:none; margin-bottom:12px;"></div>
+        <div class="chart-container" id="btEquityChartContainer2" style="display:none; margin-bottom:12px;">
+          <div class="chart-header">
+            <div class="chart-title">组合净值曲线</div>
+            <div class="chart-meta" id="btEquityChartMeta2"></div>
           </div>
-          <div style="background:#353538;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">最大回撤</div>
-            <div style="color:#E05C5C;font-size:24px;font-weight:bold;">${dd.toFixed(2)}%</div>
-          </div>
-          <div style="background:#353538;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">交易次数</div>
-            <div style="font-size:24px;font-weight:bold;">${d.trades || d.交易次数 || 0}</div>
-          </div>
-          <div style="background:#353538;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">胜率</div>
-            <div style="font-size:24px;font-weight:bold;">${((d.win_rate_pct || d.胜率) || 0).toFixed(1)}%</div>
+          <div style="height:200px; overflow:hidden;">
+            <canvas id="btEquityChart2"></canvas>
           </div>
         </div>
-        <div style="color:#888;font-size:12px;line-height:1.8;">
-          <div>创建时间: ${d.created_at || d.创建时间 || '-'}</div>
-          <div>数据集: ${d.split_name || d.数据集 || '-'}</div>
-          <div>版本: ${d.strategy_version || d.策略版本 || '-'}</div>
+        <div id="btDetailInfo2" style="color:#888;font-size:12px;line-height:1.6;"></div>
+      `;
+
+      const btStatCards2 = document.getElementById('btStatCards2');
+      const initCap = d.initial_capital || 0;
+      const finalCap = d.final_capital || 0;
+      btStatCards2.innerHTML = `
+        <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-start;">
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">初始资金</div>
+            <div style="color:#000;font-size:16px;font-weight:bold;">${initCap.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">最终资金</div>
+            <div style="color:${finalCap>=initCap?'#4CAF82':'#E05C5C'};font-size:16px;font-weight:bold;">${finalCap.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">版本号</div>
+            <div style="color:#4FA8D7;font-size:18px;font-weight:bold;">${version}</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">数据集</div>
+            <div style="color:#fff;font-size:16px;font-weight:bold;">${d.split_name || '-'}</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">收益率</div>
+            <div style="color:${ret>=0?'#4CAF82':'#E05C5C'};font-size:18px;font-weight:bold;">${ret.toFixed(1)}%</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">最大回撤</div>
+            <div style="color:#ff7777;font-size:18px;font-weight:bold;">${dd.toFixed(1)}%</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">成交量</div>
+            <div style="color:#4CAF82;font-size:18px;font-weight:bold;">${volume.toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">利润/成交量</div>
+            <div style="color:${profitPerVol>=0?'#4CAF82':'#E05C5C'};font-size:18px;font-weight:bold;">${fmtK(profitPerVol)}</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">胜率</div>
+            <div style="color:#4CAF82;font-size:18px;font-weight:bold;">${winRate.toFixed(1)}%</div>
+          </div>
         </div>
       `;
-      document.getElementById('btDetailContent').innerHTML = html;
+      btStatCards2.style.display = 'block';
+
+      const eqData = equityData.data || [];
+      const btEquityChartContainer2 = document.getElementById('btEquityChartContainer2');
+      const btEquityChartMeta2 = document.getElementById('btEquityChartMeta2');
+      if (eqData.length > 0) {
+        const labels = eqData.map(r => r.timestamp);
+        const equity = eqData.map(r => r.equity);
+        const drawdown = eqData.map(r => r.drawdown);
+        btEquityChartContainer2.style.display = 'block';
+        btEquityChartMeta2.textContent = `${eqData.length} bars | ${version} | ${d.split_name || '-'}`;
+
+        if (window.btEquityChartInstance) {
+          window.btEquityChartInstance.destroy();
+        }
+        const ctx = document.getElementById('btEquityChart2').getContext('2d');
+        window.btEquityChartInstance = new Chart(ctx, {
+          type: 'line',
+          data: { labels, datasets: [
+            { label: '净值', data: equity, borderColor: '#4FA8D7', backgroundColor: 'rgba(79,168,215,0.1)', borderWidth: 2, tension: 0.1, fill: true, pointRadius: 0, yAxisID: 'y' },
+            { label: '回撤', data: drawdown, borderColor: '#E05C5C', backgroundColor: 'rgba(224,92,92,0.1)', borderWidth: 1, tension: 0.1, fill: true, pointRadius: 0, yAxisID: 'y1' }
+          ]},
+          options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { color: '#888', font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}` } } }, scales: { x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: '#2A2A2E' } }, y: { type: 'linear', position: 'left', ticks: { color: '#4FA8D7', callback: v => v.toFixed(0) }, grid: { color: '#2A2A2E' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#E05C5C', callback: v => v.toFixed(1) }, grid: { drawOnChartArea: false } } } }
+        });
+      }
+
+      const btDetailInfo2 = document.getElementById('btDetailInfo2');
+      btDetailInfo2.innerHTML = `
+        <span style="color:#666;">数据集: ${d.split_name || d.数据集 || '-'} | </span>
+        <span style="color:#666;">交易次数: ${trades.toLocaleString()} | </span>
+        <span style="color:#666;">夏普比率: ${sharpe.toFixed(2)} | </span>
+        <span style="color:#666;">创建: ${(d.created_at || d.创建时间 || '-').slice(0, 19)}</span>
+      `;
     } catch (e) {
-      document.getElementById('btDetailContent').innerHTML = `<div style="color:#E05C5C;padding:40px;">加载失败: ${e.message}</div>`;
+      console.error('Backtest.showDetail error:', e);
+      if (btDetailContent) {
+        btDetailContent.innerHTML = `<div style="color:#E05C5C;padding:40px;">加载失败: ${e.message}</div>`;
+      }
     }
   },
 
   filterList() {
-    const q = document.getElementById('btSearch').value.toLowerCase();
-    const rows = document.querySelectorAll('#btListWrap tbody tr');
-    rows.forEach(r => {
-      r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
-    });
+    this._searchFilter = document.getElementById('btSearch').value.toLowerCase();
+    this.renderList();
   }
 };
 
@@ -1674,29 +1836,33 @@ const Backtest = {
 // 服务器回测
 // ============================================================
 const ServerBacktest = {
+  _loaded: false,
   async loadList() {
     try {
       const resp = await fetch('/api/server_backtest/experiments');
-      const list = await resp.json();
+      const result = await resp.json();
+      const list = (result.data && Array.isArray(result.data)) ? result.data : [];
       const wrap = document.getElementById('sbtListWrap');
-      if (!list || !list.length) {
+      if (!list.length) {
         wrap.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无数据</div>';
         return;
       }
-      let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;color:#bbb;">';
-      html += '<thead><tr style="background:#353538;"><th style="padding:8px;text-align:left;">实验名</th><th style="padding:8px;">版本</th><th style="padding:8px;">数据集</th><th style="padding:8px;">收益</th></tr></thead><tbody>';
+      let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;color:#333;">';
+      html += '<thead><tr style="background:#F0F2F5;"><th style="padding:8px;text-align:left;">实验名</th><th style="padding:8px;">版本</th><th style="padding:8px;">数据集</th><th style="padding:8px;">收益%</th><th style="padding:8px;">净利润</th></tr></thead><tbody>';
       list.slice(0, 50).forEach(exp => {
         const ret = exp.total_return_pct || 0;
         const cls = ret >= 0 ? '#4CAF82' : '#E05C5C';
         html += `<tr style="cursor:pointer" onclick="ServerBacktest.showDetail(${exp.id})">`;
-        html += `<td style="padding:8px;border-bottom:1px solid #404044;">${exp.name || exp.experiment_name || exp.id}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #404044;">${exp.version || '-'}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #404044;">${exp.dataset || '-'}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #404044;color:${cls};">${ret.toFixed(2)}%</td>`;
+        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.experiment_name || exp.id}</td>`;
+        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.strategy_version || '-'}</td>`;
+        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.split_name || '-'}</td>`;
+        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;color:${cls};">${ret.toFixed(2)}%</td>`;
+        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.net_profit != null ? '$' + exp.net_profit.toFixed(2) : '-'}</td>`;
         html += '</tr>';
       });
       html += '</tbody></table>';
       wrap.innerHTML = html;
+      ServerBacktest._loaded = true;
     } catch (e) {
       document.getElementById('sbtListWrap').innerHTML = `<div style="color:#E05C5C;padding:20px;">加载失败: ${e.message}</div>`;
     }
@@ -1711,18 +1877,36 @@ const ServerBacktest = {
       const d = await resp.json();
       const ret = d.total_return_pct || 0;
       const html = `
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
-          <div style="background:#353538;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">收益</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
+          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
+            <div style="color:#888;font-size:12px;">收益%</div>
             <div style="color:${ret>=0?'#4CAF82':'#E05C5C'};font-size:24px;font-weight:bold;">${ret.toFixed(2)}%</div>
           </div>
-          <div style="background:#353538;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">最大回撤</div>
+          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
+            <div style="color:#888;font-size:12px;">最大回撤%</div>
             <div style="color:#E05C5C;font-size:24px;font-weight:bold;">${(d.max_drawdown_pct || 0).toFixed(2)}%</div>
           </div>
-          <div style="background:#353538;padding:16px;border-radius:8px;text-align:center;">
+          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
             <div style="color:#888;font-size:12px;">交易次数</div>
             <div style="font-size:24px;font-weight:bold;">${d.trades || 0}</div>
+          </div>
+          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
+            <div style="color:#888;font-size:12px;">净利润</div>
+            <div style="font-size:24px;font-weight:bold;">${d.net_profit != null ? '$' + d.net_profit.toFixed(2) : '-'}</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
+            <div style="color:#888;font-size:12px;">夏普</div>
+            <div style="font-size:20px;font-weight:bold;">${(d.sharpe || 0).toFixed(3)}</div>
+          </div>
+          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
+            <div style="color:#888;font-size:12px;">胜率%</div>
+            <div style="font-size:20px;font-weight:bold;">${(d.win_rate_pct || 0).toFixed(1)}%</div>
+          </div>
+          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
+            <div style="color:#888;font-size:12px;">成交量</div>
+            <div style="font-size:20px;font-weight:bold;">${d.trade_volume_usd ? '$' + d.trade_volume_usd.toFixed(0) : '-'}</div>
           </div>
         </div>
       `;
