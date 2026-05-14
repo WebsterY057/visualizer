@@ -335,8 +335,6 @@
   <div style="max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: minmax(460px, 1fr) minmax(460px, 1.05fr); gap: 24px; align-items: start;">
     <div class="panel-section" style="min-width:0;">
       <div class="panel-title">服务器回测列表（汇总，按回测时间倒序）</div>
-      <input type="text" id="sbtSearch" placeholder="筛选实验名…" oninput="ServerBacktest.filterList()"
-        style="width:100%;box-sizing:border-box;margin:10px 0;padding:8px 10px;background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);border-radius:6px;font-size:13px;">
       <div id="sbtListWrap" style="max-height:calc(100vh - 240px);overflow:auto;"></div>
     </div>
     <div class="panel-section" style="min-width:0;">
@@ -1707,8 +1705,8 @@ const Backtest = {
       html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;"><button onclick="event.stopPropagation();Backtest.showParams(${exp.id})" style="background:var(--sky);border:none;border-radius:4px;padding:4px 10px;color:#111;cursor:pointer;font-size:11px;">详情</button></td>`;
       html += '</tr>';
     });
-    html += '</tbody></table>';
-    wrap.innerHTML = html;
+      html += '</tbody></table>';
+      wrap.innerHTML = html;
   },
 
   setSort(field) {
@@ -1922,23 +1920,33 @@ const ServerBacktest = {
         wrap.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无数据</div>';
         return;
       }
-      let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#333;table-layout:fixed;">';
-      html += '<thead><tr style="background:#F0F2F5;"><th style="padding:10px 8px;text-align:left;width:28%;">实验名</th><th style="padding:10px 8px;width:16%;">回测时间</th><th style="padding:10px 8px;width:9%;">版本</th><th style="padding:10px 8px;width:14%;">数据集</th><th style="padding:10px 8px;width:10%;">收益%</th><th style="padding:10px 8px;width:12%;">净利润</th></tr></thead><tbody>';
+      let html = '<div style="display:flex;flex-direction:column;gap:6px;">';
       list.forEach(exp => {
         const ret = exp.total_return_pct || 0;
         const cls = ret >= 0 ? '#4CAF82' : '#E05C5C';
         const bt = exp.created_at ? String(exp.created_at).slice(0, 19).replace('T', ' ') : '-';
-        html += `<tr style="cursor:pointer" onclick="ServerBacktest.showDetail(${exp.id})">`;
-        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.experiment_name || exp.id}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;color:#666;font-size:12px;white-space:nowrap;">${bt}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.strategy_version || '-'}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.split_name || '-'}</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;color:${cls};">${ret.toFixed(2)}%</td>`;
-        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.net_profit != null ? '$' + exp.net_profit.toFixed(2) : '-'}</td>`;
-        html += '</tr>';
+        const name = exp.experiment_name || exp.id;
+        const version = exp.strategy_version || '-';
+        const split = exp.split_name || '-';
+        html += `<div style="cursor:pointer;background:var(--gray-2);border:1px solid var(--gray-3);border-radius:6px;padding:10px 12px;" onclick="ServerBacktest.showDetail(${exp.id})" onmouseover="this.style.borderColor='var(--gray-4)'" onmouseout="this.style.borderColor='var(--gray-3)'">`;
+        html += `<div style="font-size:13px;color:#000;font-weight:600;margin-bottom:6px;">${name}</div>`;
+        html += `<div style="display:flex;gap:16px;font-size:12px;color:#666;flex-wrap:wrap;">`;
+        html += `<span>版本 <strong style="color:#000;">${version}</strong></span>`;
+        html += `<span>数据集 <strong style="color:#000;">${split}</strong></span>`;
+        html += `<span>收益 <strong style="color:${cls};">${ret.toFixed(2)}%</strong></span>`;
+        html += `<span>净利润 <strong style="color:#000;">${exp.net_profit != null ? '$' + exp.net_profit.toFixed(2) : '-'}</strong></span>`;
+        html += `<span style="color:#999;">${bt}</span>`;
+        html += '</div></div>';
       });
-      html += '</tbody></table>';
+      html += '</div>';
       wrap.innerHTML = html;
+      ServerBacktest._loaded = true;
+      // Auto-select latest Holdout
+      const holdoutList = list.filter(exp => String(exp.experiment_name || '').includes('Holdout'));
+      if (holdoutList.length > 0) {
+        const latest = holdoutList.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+        ServerBacktest.showDetail(latest.id);
+      }
     } catch (e) {
       document.getElementById('sbtListWrap').innerHTML = `<div style="color:#E05C5C;padding:20px;">加载失败: ${e.message}</div>`;
     }
@@ -1949,45 +1957,73 @@ const ServerBacktest = {
     document.getElementById('sbtDetailContent').style.display = 'block';
     document.getElementById('sbtDetailContent').innerHTML = '<div style="padding:40px;text-align:center;color:#888;">加载中...</div>';
     try {
-      const resp = await fetch(`/api/server_backtest/detail/${id}`);
-      const d = await resp.json();
+      const [detailResp, equityResp] = await Promise.all([
+        fetch(`/api/server_backtest/detail/${id}`),
+        fetch(`/api/server_backtest/equity_curves/${id}`)
+      ]);
+      if (!detailResp.ok) throw new Error(`Detail API error: ${detailResp.status}`);
+      const d = await detailResp.json();
+      let equityData = [];
+      if (equityResp.ok) {
+        const eqJson = await equityResp.json();
+        equityData = eqJson.data || [];
+      }
       const ret = d.total_return_pct || 0;
       const bt = (d.created_at || d.创建时间) ? String(d.created_at || d.创建时间).slice(0, 19).replace('T', ' ') : '-';
+      const version = d.strategy_version || '-';
+      const initCap = equityData.length > 0 ? equityData[0].equity : 0;
+      const finalCap = equityData.length > 0 ? equityData[equityData.length - 1].equity : 0;
+
       const html = `
         <div style="margin-bottom:14px;padding:10px 12px;background:#F7F8FA;border-radius:8px;font-size:13px;color:#555;">
           <strong style="color:#333;">回测时间</strong>：${bt}
         </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
-          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">收益%</div>
-            <div style="color:${ret>=0?'#4CAF82':'#E05C5C'};font-size:24px;font-weight:bold;">${ret.toFixed(2)}%</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">初始资金</div>
+            <div style="color:#000;font-size:16px;font-weight:bold;">${initCap.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
           </div>
-          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">最大回撤%</div>
-            <div style="color:#E05C5C;font-size:24px;font-weight:bold;">${(d.max_drawdown_pct || 0).toFixed(2)}%</div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">最终资金</div>
+            <div style="color:${finalCap>=initCap?'#4CAF82':'#E05C5C'};font-size:16px;font-weight:bold;">${finalCap.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
           </div>
-          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">交易次数</div>
-            <div style="font-size:24px;font-weight:bold;">${d.trades || 0}</div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">版本号</div>
+            <div style="color:#4FA8D7;font-size:18px;font-weight:bold;">${version}</div>
           </div>
-          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">净利润</div>
-            <div style="font-size:24px;font-weight:bold;">${d.net_profit != null ? '$' + d.net_profit.toFixed(2) : '-'}</div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">数据集</div>
+            <div style="color:#4FA8D7;font-size:16px;font-weight:bold;">${d.split_name || '-'}</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">收益率</div>
+            <div style="color:${ret>=0?'#4CAF82':'#E05C5C'};font-size:18px;font-weight:bold;">${ret.toFixed(1)}%</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">最大回撤</div>
+            <div style="color:#ff7777;font-size:18px;font-weight:bold;">${(d.max_drawdown_pct || 0).toFixed(1)}%</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">成交量</div>
+            <div style="color:#4CAF82;font-size:18px;font-weight:bold;">${d.trade_volume_usd ? d.trade_volume_usd.toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0}) : '-'}</div>
+          </div>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">夏普</div>
+            <div style="color:#888;font-size:18px;font-weight:bold;">${(d.sharpe || 0).toFixed(3)}</div>
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">夏普</div>
-            <div style="font-size:20px;font-weight:bold;">${(d.sharpe || 0).toFixed(3)}</div>
+        ${equityData.length > 0 ? `
+        <div style="margin-bottom:12px;">
+          <div style="color:#888;font-size:12px;margin-bottom:6px;">组合净值曲线 | ${equityData.length} bars</div>
+          <div style="height:200px;background:#F7F8FA;border-radius:8px;overflow:hidden;">
+            <canvas id="sbtEquityChart"></canvas>
           </div>
-          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">胜率%</div>
-            <div style="font-size:20px;font-weight:bold;">${(d.win_rate_pct || 0).toFixed(1)}%</div>
-          </div>
-          <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
-            <div style="color:#888;font-size:12px;">成交量</div>
-            <div style="font-size:20px;font-weight:bold;">${d.trade_volume_usd ? '$' + d.trade_volume_usd.toFixed(0) : '-'}</div>
-          </div>
+        </div>
+        ` : ''}
+        <div style="color:#888;font-size:12px;line-height:1.6;">
+          <span>交易次数: ${d.trades || 0} | </span>
+          <span>胜率: ${(d.win_rate_pct || 0).toFixed(1)}% | </span>
+          <span>创建: ${(d.created_at || d.创建时间 || '-').slice(0, 19)}</span>
         </div>
       `;
       document.getElementById('sbtDetailContent').innerHTML = html;
@@ -1999,10 +2035,11 @@ const ServerBacktest = {
   filterList() {
     const el = document.getElementById('sbtSearch');
     const q = (el && el.value) ? el.value.toLowerCase() : '';
-    const rows = document.querySelectorAll('#sbtListWrap tbody tr');
-    rows.forEach(r => {
+    const wrap = document.getElementById('sbtListWrap');
+    const items = wrap.firstElementChild ? wrap.firstElementChild.children : [];
+    for (const r of items) {
       r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
-    });
+    }
   }
 };
 
