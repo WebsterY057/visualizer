@@ -1670,7 +1670,7 @@ def api_backtest_detail(exp_id):
                    交易次数 as trades, 胜率 as win_rate_pct, 夏普比率 as sharpe,
                    成交量USD as trade_volume, 净利润 as net_profit, 成交额比率 as profit_per_volume,
                    方向 as direction, 改动点 as change_summary, 参数摘要 as param_summary,
-                   标签 as tags, 备注 as notes, 来源 as source, 参数JSON as params_json
+                   标签 as tags, 备注 as notes, 来源 as source
             FROM backtest_experiments
             WHERE 编号 = ? AND 来源='本地'
         """, (exp_id,))
@@ -1678,19 +1678,7 @@ def api_backtest_detail(exp_id):
         conn.close()
         if not row:
             return jsonify({'error': '实验不存在'}), 404
-        result = dict(row)
-        try:
-            import json
-            params = json.loads(result.get('params_json') or '{}')
-            tokens = params.get('tokens') or []
-            initial_capital = 3000.0 * len(tokens) if tokens else 3000.0
-            net_profit = result.get('net_profit') or 0
-            result['initial_capital'] = initial_capital
-            result['final_capital'] = initial_capital + net_profit
-        except:
-            result['initial_capital'] = 3000.0
-            result['final_capital'] = result.get('net_profit') or 3000.0
-        return jsonify(result)
+        return jsonify(dict(row))
     except Exception as e:
         logger.error(f"本地回测详情查询失败: {e}")
         return jsonify({'error': str(e)}), 500

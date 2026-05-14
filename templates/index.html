@@ -1608,9 +1608,26 @@ const Backtest = {
       const list = await resp.json();
       this._listData = list || [];
       this.renderList();
+      this.autoShowFirst();
     } catch (e) {
       document.getElementById('btListWrap').innerHTML = `<div style="color:#E05C5C;padding:20px;">加载失败: ${e.message}</div>`;
     }
+  },
+
+  autoShowFirst() {
+    const list = this._listData;
+    if (!list || !list.length) return;
+    const sorted = [...list].sort((a, b) => {
+      let aVal = a[this._sortField] || 0;
+      let bVal = b[this._sortField] || 0;
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+      if (aVal < bVal) return this._sortDir === 'asc' ? -1 : 1;
+      if (aVal > bVal) return this._sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    const first = sorted.find(e => e.split_name === 'holdout') || sorted[0];
+    if (first) this.showDetail(first.id);
   },
 
   renderList() {
@@ -1726,7 +1743,7 @@ const Backtest = {
       const winRate = d.win_rate_pct || d.胜率 || 0;
       const trades = d.trades || d.交易次数 || 0;
 
-      const fmtK = v => v >= 0 ? `+${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtK = v => v.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
       btDetailContent.innerHTML = `
         <div id="btStatCards2" style="display:none; margin-bottom:12px;"></div>
@@ -1741,10 +1758,10 @@ const Backtest = {
         </div>
         <div id="btDetailInfo2" style="color:#888;font-size:12px;line-height:1.6;"></div>
       `;
-
       const btStatCards2 = document.getElementById('btStatCards2');
-      const initCap = d.initial_capital || 0;
-      const finalCap = d.final_capital || 0;
+      const eqData = equityData.data || [];
+      const initCap = eqData.length > 0 ? eqData[0].equity : 0;
+      const finalCap = eqData.length > 0 ? eqData[eqData.length - 1].equity : 0;
       btStatCards2.innerHTML = `
         <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-start;">
           <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
@@ -1761,7 +1778,7 @@ const Backtest = {
           </div>
           <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
             <div style="color:#888;font-size:11px;">数据集</div>
-            <div style="color:#fff;font-size:16px;font-weight:bold;">${d.split_name || '-'}</div>
+            <div style="color:#4FA8D7;font-size:16px;font-weight:bold;">${d.split_name || '-'}</div>
           </div>
           <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
             <div style="color:#888;font-size:11px;">收益率</div>
@@ -1787,7 +1804,6 @@ const Backtest = {
       `;
       btStatCards2.style.display = 'block';
 
-      const eqData = equityData.data || [];
       const btEquityChartContainer2 = document.getElementById('btEquityChartContainer2');
       const btEquityChartMeta2 = document.getElementById('btEquityChartMeta2');
       if (eqData.length > 0) {
