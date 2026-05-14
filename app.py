@@ -486,8 +486,9 @@ def index():
 
 @app.route('/backtest')
 def backtest():
-    """回测实验工作台（独立页面）"""
+    """回测实验工作台"""
     return render_template('backtest.html')
+
 
 @app.route('/api/databases')
 def api_databases():
@@ -1517,9 +1518,6 @@ def api_backtest_experiment_curve(exp_id: int):
 # 服务器回测专用端点（过滤 来源='服务器'）
 # ─────────────────────────────────────────────────────────────
 
-@app.route('/backtest_analysis')
-def backtest_analysis():
-    return render_template('backtest_analysis.html')
 def api_server_backtest_list():
     try:
         db_path = SERVER_BACKTEST_DB_PATH
@@ -1764,11 +1762,6 @@ def api_backtest_trade_markers(exp_id):
     except Exception as e:
         logger.error(f"trade_markers查询失败: {e}")
         return jsonify({'data': [], 'error': str(e)}), 500
-
-
-@app.route('/api/backtest/trade_markers/<int:exp_id>')
-def api_backtest_trade_markers_v2(exp_id):
-    return jsonify({'data': []})
 
 
 @app.route('/api/server_backtest/tokens/<int:exp_id>')
