@@ -23,6 +23,8 @@ ORDERS_BIGCOIN_PATH = '/Users/yy/.hermes/workspace/db/orders_bigcoin.db'
 SUMMARY_DB_PATH = '/Users/yy/.hermes/workspace/db/summary.db'
 BACKTEST_DB_PATH = '/Users/yy/.hermes/workspace/db/backtest_experiments.db'
 SERVER_BACKTEST_DB_PATH = '/Users/yy/.hermes/workspace/db/backtest_server.db'
+# 服务器库列表/热力图只展示汇总行：排除按单 token 拆开的 Holdout（实验名形如 *_Holdout_alpha_*usdt）
+SERVER_BACKTEST_LIST_EXCLUDE_SQL = " AND (实验名 NOT LIKE '%Holdout_alpha_%') "
 BACKTEST_REPORT_ROOT = '/Users/yy/.hermes/workspace/db/回测项目/量价关系信号_alpha市场/报告'
 MAX_ROWS = 50000
 
@@ -1536,7 +1538,8 @@ def api_server_backtest_list():
             FROM backtest_experiments
             WHERE 来源='服务器'
               AND (LOWER(数据集) = 'train' OR LOWER(数据集) LIKE 'train_%' OR LOWER(数据集) LIKE 'test_%' OR LOWER(数据集) = 'holdout' OR LOWER(数据集) LIKE 'holdout_%' OR LOWER(数据集) LIKE 'alpha_%')
-            ORDER BY CAST(SUBSTR(LOWER(策略版本), 2) AS INTEGER) DESC, 创建时间 DESC
+            """ + SERVER_BACKTEST_LIST_EXCLUDE_SQL + """
+            ORDER BY datetime(创建时间) DESC, 编号 DESC
             LIMIT 100
         """)
         rows = [dict(r) for r in cur.fetchall()]
@@ -1557,7 +1560,12 @@ def api_server_backtest_experiments():
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
-        where_clause = """WHERE 来源='服务器' AND (LOWER(数据集) = 'train' OR LOWER(数据集) LIKE 'train_%' OR LOWER(数据集) LIKE 'test_%' OR LOWER(数据集) = 'holdout' OR LOWER(数据集) LIKE 'holdout_%' OR LOWER(数据集) LIKE 'alpha_%')"""
+        where_clause = (
+            """WHERE 来源='服务器' AND (LOWER(数据集) = 'train' OR LOWER(数据集) LIKE 'train_%' """
+            """OR LOWER(数据集) LIKE 'test_%' OR LOWER(数据集) = 'holdout' OR LOWER(数据集) LIKE 'holdout_%' """
+            """OR LOWER(数据集) LIKE 'alpha_%')"""
+            + SERVER_BACKTEST_LIST_EXCLUDE_SQL
+        )
         params = [limit]
 
         if experiment_name:
@@ -1575,7 +1583,7 @@ def api_server_backtest_experiments():
                    标签 as tags, 备注 as notes, 参数JSON as params_json
             FROM backtest_experiments
             {where_clause}
-            ORDER BY CAST(SUBSTR(LOWER(策略版本), 2) AS INTEGER) DESC, 编号 DESC
+            ORDER BY datetime(创建时间) DESC, 编号 DESC
             LIMIT ?
         """, params)
         rows = [dict(r) for r in cur.fetchall()]
@@ -1594,7 +1602,7 @@ def api_server_backtest_detail(exp_id):
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("""
-            SELECT e.编号 as id, e.实验名 as experiment_name, e.策略版本 as strategy_version,
+            SELECT e.编号 as id, e.创建时间 as created_at, e.实验名 as experiment_name, e.策略版本 as strategy_version,
                    e.数据集 as split_name, e.总收益率 as total_return_pct,
                    e.最大回撤 as max_drawdown_pct, e.夏普比率 as sharpe,
                    e.胜率 as win_rate_pct, e.交易次数 as trades,
@@ -1670,7 +1678,7 @@ def api_backtest_detail(exp_id):
                    交易次数 as trades, 胜率 as win_rate_pct, 夏普比率 as sharpe,
                    成交量USD as trade_volume, 净利润 as net_profit, 成交额比率 as profit_per_volume,
                    方向 as direction, 改动点 as change_summary, 参数摘要 as param_summary,
-                   标签 as tags, 备注 as notes, 来源 as source
+                   标签 as tags, 备注 as notes, 来源 as source, 参数JSON as params_json
             FROM backtest_experiments
             WHERE 编号 = ? AND 来源='本地'
         """, (exp_id,))
@@ -1860,13 +1868,14 @@ def api_server_backtest_heatmap():
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        cur.execute(f"""
+        sql = f"""
             SELECT 策略版本 as strategy_version, 数据集 as split_name,
                    {metric} as value
             FROM backtest_experiments
             WHERE 来源='服务器'
               AND (LOWER(数据集) = 'train' OR LOWER(数据集) LIKE 'train_%' OR LOWER(数据集) LIKE 'test_%' OR LOWER(数据集) = 'holdout' OR LOWER(数据集) LIKE 'holdout_%')
-        """)
+        """ + SERVER_BACKTEST_LIST_EXCLUDE_SQL
+        cur.execute(sql)
         rows = [dict(r) for r in cur.fetchall()]
         conn.close()
         return jsonify(rows)

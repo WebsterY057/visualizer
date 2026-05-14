@@ -316,21 +316,31 @@
   </div>
   <div class="panel-section" style="margin-top:8px;">
     <div class="panel-title">回测实验列表</div>
-    <div id="btListWrap" style="max-height:calc(100vh - 300px);overflow:auto;"></div>
+    <div id="btListFilter"></div>
+    <div id="btListWrap" style="max-height:calc(100vh - 340px);overflow:auto;"></div>
+  </div>
+  <div id="btParamsModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center;">
+    <div style="background:#1E1E22;border-radius:8px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:auto;position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="color:#fff;font-size:16px;font-weight:bold;" id="btParamsTitle"></div>
+        <button onclick="Backtest.closeParams()" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;">✕</button>
+      </div>
+      <div id="btParamsBody" style="font-size:13px;color:#ccc;line-height:1.8;"></div>
+    </div>
   </div>
 </div>
 
 <!-- ========== 服务器回测面板 ========== -->
-<div id="serverBacktestPanel" style="display:none; width:100%; padding: 20px;">
-  <div style="display:grid; grid-template-columns: 360px 1fr; gap: 14px;">
-    <div>
-      <div class="panel-section">
-        <div class="panel-title">服务器回测列表</div>
-        <div id="sbtListWrap" style="max-height:400px;overflow:auto;"></div>
-      </div>
+<div id="serverBacktestPanel" style="display:none; width:100%; padding: 20px; box-sizing:border-box;">
+  <div style="max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: minmax(460px, 1fr) minmax(460px, 1.05fr); gap: 24px; align-items: start;">
+    <div class="panel-section" style="min-width:0;">
+      <div class="panel-title">服务器回测列表（汇总，按回测时间倒序）</div>
+      <input type="text" id="sbtSearch" placeholder="筛选实验名…" oninput="ServerBacktest.filterList()"
+        style="width:100%;box-sizing:border-box;margin:10px 0;padding:8px 10px;background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);border-radius:6px;font-size:13px;">
+      <div id="sbtListWrap" style="max-height:calc(100vh - 240px);overflow:auto;"></div>
     </div>
-    <div>
-      <div id="sbtDetailEmpty" style="padding:40px;text-align:center;color:var(--gray-4);">点击左侧实验查看详情</div>
+    <div class="panel-section" style="min-width:0;">
+      <div id="sbtDetailEmpty" style="padding:48px 24px;text-align:center;color:var(--gray-4);">在左侧列表中点击一行查看汇总指标</div>
       <div id="sbtDetailContent" style="display:none;"></div>
     </div>
   </div>
@@ -1295,7 +1305,8 @@ function showTab(tab, el) {
   if (tab === 'analysis') loadPnlCompare();
   if (tab === 'queryPanel') Query.loadTables();
   if (tab === 'backtestPanel' && Backtest._listData.length === 0) Backtest.loadList();
-  if (tab === 'serverBacktestPanel' && !ServerBacktest._loaded) ServerBacktest.loadList();
+  // 每次进入都刷新，避免沿用旧版表格 DOM（例如新增「回测时间」列后仍显示缓存）
+  if (tab === 'serverBacktestPanel') ServerBacktest.loadList();
 }
 
 // ============================================================
@@ -1656,7 +1667,7 @@ const Backtest = {
       return this._sortDir === 'asc' ? '↑' : '↓';
     };
 
-    let html = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+    document.getElementById('btListFilter').innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
       <span style="font-size:12px;color:#888;">数据集:</span>
       <select id="btDatasetFilter" onchange="Backtest.setDatasetFilter(this.value)" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:4px 8px;border-radius:4px;font-size:12px;width:120px;">
         <option value="">全部</option>
@@ -1664,8 +1675,9 @@ const Backtest = {
       </select>
       <span style="font-size:11px;color:#666;">(点击表头排序)</span>
     </div>`;
-    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;color:#bbb;">';
-    html += `<thead><tr style="background:#2A2A2E;">
+
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;color:#bbb;">';
+    html += `<thead style="position:sticky;top:0;z-index:1;background:#2A2A2E;"><tr style="background:#2A2A2E;">
       <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('created_at')">时间 ${arrow('created_at')}</th>
       <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('experiment_name')">实验名 ${arrow('experiment_name')}</th>
       <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('strategy_version')">版本 ${arrow('strategy_version')}</th>
@@ -1674,6 +1686,7 @@ const Backtest = {
       <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('max_drawdown_pct')">最大回撤 ${arrow('max_drawdown_pct')}</th>
       <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('trades')">交易次数 ${arrow('trades')}</th>
       <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="Backtest.setSort('sharpe')">夏普 ${arrow('sharpe')}</th>
+      <th style="padding:6px 8px;text-align:center;">详情</th>
     </tr></thead><tbody>`;
     data.slice(0, 50).forEach(exp => {
       const ret = exp.total_return_pct || exp.总收益率 || 0;
@@ -1691,6 +1704,7 @@ const Backtest = {
       html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#ff7777;font-weight:600;">${dd.toFixed(1)}%</td>`;
       html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${trades.toLocaleString()}</td>`;
       html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${sharpe.toFixed(2)}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;"><button onclick="event.stopPropagation();Backtest.showParams(${exp.id})" style="background:var(--sky);border:none;border-radius:4px;padding:4px 10px;color:#111;cursor:pointer;font-size:11px;">详情</button></td>`;
       html += '</tr>';
     });
     html += '</tbody></table>';
@@ -1845,6 +1859,52 @@ const fmtK = v => v.toLocaleString('en-US', { minimumFractionDigits: 4, maximumF
   filterList() {
     this._searchFilter = document.getElementById('btSearch').value.toLowerCase();
     this.renderList();
+  },
+
+  async showParams(id) {
+    const modal = document.getElementById('btParamsModal');
+    const title = document.getElementById('btParamsTitle');
+    const body = document.getElementById('btParamsBody');
+    modal.style.display = 'flex';
+    title.textContent = '加载中...';
+    body.innerHTML = '';
+    try {
+      const resp = await fetch(`/api/backtest/detail/${id}`);
+      const d = await resp.json();
+      if (d.error) throw new Error(d.error);
+      const version = d.strategy_version || d.策略版本 || '-';
+      const name = d.experiment_name || d.实验名 || '-';
+      title.textContent = `${name} (${version}) 参数详情`;
+      let html = '';
+      if (d.params_json) {
+        try {
+          const params = JSON.parse(d.params_json);
+          html += '<table style="width:100%;border-collapse:collapse;">';
+          for (const [k, v] of Object.entries(params)) {
+            const val = Array.isArray(v) ? v.join(', ') : String(v);
+            html += `<tr><td style="padding:4px 8px;color:#999;white-space:nowrap;vertical-align:top;">${k}</td><td style="padding:4px 8px;color:#fff;">${val}</td></tr>`;
+          }
+          html += '</table>';
+        } catch {
+          html += `<div style="color:#888;">${d.params_json}</div>`;
+        }
+      } else {
+        html = '<div style="color:#888;">无参数信息</div>';
+      }
+      if (d.change_summary || d.param_summary) {
+        html += '<div style="margin-top:12px;padding-top:12px;border-top:1px solid #353538;">';
+        if (d.param_summary) html += `<div style="color:#999;margin-bottom:4px;">参数摘要</div><div style="color:#fff;">${d.param_summary}</div>`;
+        if (d.change_summary) html += `<div style="color:#999;margin-top:8px;margin-bottom:4px;">改动说明</div><div style="color:#fff;">${d.change_summary}</div>`;
+        html += '</div>';
+      }
+      body.innerHTML = html;
+    } catch (e) {
+      body.innerHTML = `<div style="color:#E05C5C;">加载失败: ${e.message}</div>`;
+    }
+  },
+
+  closeParams() {
+    document.getElementById('btParamsModal').style.display = 'none';
   }
 };
 
@@ -1852,7 +1912,6 @@ const fmtK = v => v.toLocaleString('en-US', { minimumFractionDigits: 4, maximumF
 // 服务器回测
 // ============================================================
 const ServerBacktest = {
-  _loaded: false,
   async loadList() {
     try {
       const resp = await fetch('/api/server_backtest/experiments');
@@ -1863,13 +1922,15 @@ const ServerBacktest = {
         wrap.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无数据</div>';
         return;
       }
-      let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;color:#333;">';
-      html += '<thead><tr style="background:#F0F2F5;"><th style="padding:8px;text-align:left;">实验名</th><th style="padding:8px;">版本</th><th style="padding:8px;">数据集</th><th style="padding:8px;">收益%</th><th style="padding:8px;">净利润</th></tr></thead><tbody>';
-      list.slice(0, 50).forEach(exp => {
+      let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#333;table-layout:fixed;">';
+      html += '<thead><tr style="background:#F0F2F5;"><th style="padding:10px 8px;text-align:left;width:28%;">实验名</th><th style="padding:10px 8px;width:16%;">回测时间</th><th style="padding:10px 8px;width:9%;">版本</th><th style="padding:10px 8px;width:14%;">数据集</th><th style="padding:10px 8px;width:10%;">收益%</th><th style="padding:10px 8px;width:12%;">净利润</th></tr></thead><tbody>';
+      list.forEach(exp => {
         const ret = exp.total_return_pct || 0;
         const cls = ret >= 0 ? '#4CAF82' : '#E05C5C';
+        const bt = exp.created_at ? String(exp.created_at).slice(0, 19).replace('T', ' ') : '-';
         html += `<tr style="cursor:pointer" onclick="ServerBacktest.showDetail(${exp.id})">`;
         html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.experiment_name || exp.id}</td>`;
+        html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;color:#666;font-size:12px;white-space:nowrap;">${bt}</td>`;
         html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.strategy_version || '-'}</td>`;
         html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;">${exp.split_name || '-'}</td>`;
         html += `<td style="padding:8px;border-bottom:1px solid #E0E0E0;color:${cls};">${ret.toFixed(2)}%</td>`;
@@ -1878,7 +1939,6 @@ const ServerBacktest = {
       });
       html += '</tbody></table>';
       wrap.innerHTML = html;
-      ServerBacktest._loaded = true;
     } catch (e) {
       document.getElementById('sbtListWrap').innerHTML = `<div style="color:#E05C5C;padding:20px;">加载失败: ${e.message}</div>`;
     }
@@ -1892,7 +1952,11 @@ const ServerBacktest = {
       const resp = await fetch(`/api/server_backtest/detail/${id}`);
       const d = await resp.json();
       const ret = d.total_return_pct || 0;
+      const bt = (d.created_at || d.创建时间) ? String(d.created_at || d.创建时间).slice(0, 19).replace('T', ' ') : '-';
       const html = `
+        <div style="margin-bottom:14px;padding:10px 12px;background:#F7F8FA;border-radius:8px;font-size:13px;color:#555;">
+          <strong style="color:#333;">回测时间</strong>：${bt}
+        </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
           <div style="background:#F0F2F5;padding:16px;border-radius:8px;text-align:center;">
             <div style="color:#888;font-size:12px;">收益%</div>
@@ -1933,7 +1997,8 @@ const ServerBacktest = {
   },
 
   filterList() {
-    const q = document.getElementById('sbtSearch').value.toLowerCase();
+    const el = document.getElementById('sbtSearch');
+    const q = (el && el.value) ? el.value.toLowerCase() : '';
     const rows = document.querySelectorAll('#sbtListWrap tbody tr');
     rows.forEach(r => {
       r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
