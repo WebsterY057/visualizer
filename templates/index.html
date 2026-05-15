@@ -258,7 +258,7 @@
         <div class="chart-meta" id="chartMeta"></div>
       </div>
       <div style="height:300px; overflow:hidden;">
-        <canvas id="mainChart"></canvas>
+        <canvas id="mainChart" style="width:100%;height:100%;"></canvas>
       </div>
     </div>
 
@@ -454,11 +454,11 @@ let activeFilters = {};
 let tableColumns = [];
 let yFieldsOptions = [];
 
-// 全局 Chart.js 字体设置（解决图表字体异常）
-// 注意：Chart.js CDN 脚本在上方 <script src="...">，此处一定在 CDN 加载后执行
-if (typeof Chart !== 'undefined' && Chart.defaults && Chart.defaults.global) {
-  Chart.defaults.global.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-  Chart.defaults.global.font.size = 12;
+// 全局 Chart.js 字体设置
+if (typeof Chart !== 'undefined') {
+  Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = '#888';
 }
 let selectedTables = [];
 let selectedFields = [];
@@ -780,6 +780,7 @@ async function renderChart() {
 
   document.getElementById('errorBox').innerHTML = '';
   document.getElementById('noData').style.display = 'none';
+  document.getElementById('statCards').style.display = 'none';
   document.getElementById('chartContainer').style.display = 'none';
   document.getElementById('pnlCompareContainer').style.display = 'none';
 
@@ -897,10 +898,11 @@ function renderCurrentChart() {
     data: { labels, datasets },
     options: {
       responsive: true,
-      maintainAspectRatio: true,
+      maintainAspectRatio: false,
+      devicePixelRatio: window.devicePixelRatio || 2,
       aspectRatio: chartType === 'pie' || chartType === 'heatmap' ? 1.5 : 2.5,
       plugins: {
-        legend: { labels: { color: '#555555', font: { size: 12 } } },
+        legend: { labels: { color: '#555555', font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', size: 12 } } },
         tooltip: {
           callbacks: {
             label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.raw)}`
@@ -908,11 +910,11 @@ function renderCurrentChart() {
         }
       },
       scales: chartType === 'pie' || chartType === 'heatmap' || chartType === 'radar' ? {} : chartType === 'scatter' ? {
-        x: { type: 'linear', ticks: { color: '#555555' }, grid: { color: '#E0E0E0' } },
-        y: { ticks: { color: '#555555', callback: v => fmtNum(v) }, grid: { color: '#E0E0E0' } }
+        x: { type: 'linear', ticks: { color: '#555555', font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' } }, grid: { color: '#E0E0E0' } },
+        y: { ticks: { color: '#555555', font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }, callback: v => fmtNum(v) }, grid: { color: '#E0E0E0' } }
       } : {
-        x: { ticks: { color: '#555555', maxRotation: 45 }, grid: { color: '#E0E0E0' } },
-        y: { ticks: { color: '#555555', callback: v => fmtNum(v) }, grid: { color: '#E0E0E0' } }
+        x: { ticks: { color: '#555555', maxRotation: 45, font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' } }, grid: { color: '#E0E0E0' } },
+        y: { ticks: { color: '#555555', font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }, callback: v => fmtNum(v) }, grid: { color: '#E0E0E0' } }
       }
     }
   });
@@ -921,6 +923,7 @@ function renderCurrentChart() {
 let pnlCompareChart = null;
 
 function resetDefaultChart() {
+  document.getElementById('statCards').style.display = 'none';
   document.getElementById('chartContainer').style.display = 'none';
   document.getElementById('tableContainer').style.display = 'none';
   document.getElementById('pnlCompareContainer').style.display = 'block';
@@ -987,7 +990,7 @@ async function loadPnlCompare() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { labels: { color: '#333333', font: { size: 12 } } },
+          legend: { labels: { color: '#333333', font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', size: 12 } } },
           tooltip: {
             callbacks: {
               label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)}`
@@ -995,9 +998,9 @@ async function loadPnlCompare() {
           }
         },
         scales: {
-          x: { ticks: { color: '#555555', maxTicksLimit: 15 }, grid: { color: '#E0E0E0' } },
+          x: { ticks: { color: '#555555', maxTicksLimit: 15, font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' } }, grid: { color: '#E0E0E0' } },
           y: {
-            ticks: { color: '#555555', callback: v => v >= 0 ? `+${v.toFixed(0)}` : v.toFixed(0) },
+            ticks: { color: '#555555', font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }, callback: v => v >= 0 ? `+${v.toFixed(0)}` : v.toFixed(0) },
             grid: { color: '#E0E0E0' }
           }
         }
