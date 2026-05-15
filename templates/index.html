@@ -322,14 +322,14 @@
 
 <!-- ========== 服务器回测面板 ========== -->
 <div id="serverBacktestPanel" style="display:none; width:100%; padding: 20px; box-sizing:border-box;">
-  <div style="max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: minmax(460px, 1fr) minmax(460px, 1.05fr); gap: 24px; align-items: start;">
+  <div style="max-width: 1400px; margin: 0 auto;">
     <div class="panel-section" style="min-width:0;">
-      <div class="panel-title">服务器回测列表（汇总，按回测时间倒序）</div>
-      <div id="sbtListWrap" style="max-height:calc(100vh - 240px);overflow:auto;"></div>
-    </div>
-    <div class="panel-section" style="min-width:0;">
-      <div id="sbtDetailEmpty" style="padding:48px 24px;text-align:center;color:var(--gray-4);">在左侧列表中点击一行查看汇总指标</div>
+      <div id="sbtDetailEmpty" style="padding:48px 24px;text-align:center;color:var(--gray-4);">在下方列表中点击一行查看汇总指标</div>
       <div id="sbtDetailContent" style="display:none;"></div>
+    </div>
+    <div class="panel-section" style="min-width:0;margin-top:8px;">
+      <div class="panel-title">服务器回测列表（汇总，按回测时间倒序）</div>
+      <div id="sbtListWrap" style="max-height:calc(100vh - 340px);overflow:auto;"></div>
     </div>
   </div>
 </div>
@@ -1997,52 +1997,158 @@ const fmtK = v => v.toLocaleString('en-US', { minimumFractionDigits: 4, maximumF
 // 服务器回测
 // ============================================================
 const ServerBacktest = {
+  _sortField: 'created_at',
+  _sortDir: 'desc',
+  _datasetFilter: '',
+  _listData: [],
+
   async loadList() {
     try {
       const resp = await fetch('/api/server_backtest/experiments');
       const result = await resp.json();
-      const list = (result.data && Array.isArray(result.data)) ? result.data : [];
-      const wrap = document.getElementById('sbtListWrap');
-      if (!list.length) {
-        wrap.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无数据</div>';
-        return;
-      }
-      let html = '<div style="display:flex;flex-direction:column;gap:6px;">';
-      list.forEach(exp => {
-        const ret = exp.total_return_pct || 0;
-        const cls = ret >= 0 ? '#4CAF82' : '#E05C5C';
-        const bt = exp.created_at ? String(exp.created_at).slice(0, 19).replace('T', ' ') : '-';
-        const name = exp.experiment_name || exp.id;
-        const version = exp.strategy_version || '-';
-        const split = exp.split_name || '-';
-        html += `<div style="cursor:pointer;background:var(--gray-2);border:1px solid var(--gray-3);border-radius:6px;padding:10px 12px;" onclick="ServerBacktest.showDetail(${exp.id})" onmouseover="this.style.borderColor='var(--gray-4)'" onmouseout="this.style.borderColor='var(--gray-3)'">`;
-        html += `<div style="font-size:13px;color:#000;font-weight:600;margin-bottom:6px;">${name}</div>`;
-        html += `<div style="display:flex;gap:16px;font-size:12px;color:#666;flex-wrap:wrap;">`;
-        html += `<span>版本 <strong style="color:#000;">${version}</strong></span>`;
-        html += `<span>数据集 <strong style="color:#000;">${split}</strong></span>`;
-        html += `<span>收益 <strong style="color:${cls};">${ret.toFixed(2)}%</strong></span>`;
-        html += `<span>净利润 <strong style="color:#000;">${exp.net_profit != null ? '$' + exp.net_profit.toFixed(2) : '-'}</strong></span>`;
-        html += `<span style="color:#999;">${bt}</span>`;
-        html += '</div></div>';
-      });
-      html += '</div>';
-      wrap.innerHTML = html;
-      ServerBacktest._loaded = true;
+      this._listData = (result.data && Array.isArray(result.data)) ? result.data : [];
+      this.renderList();
       // Auto-select latest Holdout
-      const holdoutList = list.filter(exp => String(exp.experiment_name || '').includes('Holdout'));
+      const holdoutList = this._listData.filter(exp => String(exp.experiment_name || '').includes('Holdout'));
       if (holdoutList.length > 0) {
         const latest = holdoutList.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
-        ServerBacktest.showDetail(latest.id);
+        this.showDetail(latest.id);
       }
     } catch (e) {
       document.getElementById('sbtListWrap').innerHTML = `<div style="color:#E05C5C;padding:20px;">加载失败: ${e.message}</div>`;
     }
   },
 
+  renderList() {
+    const wrap = document.getElementById('sbtListWrap');
+    if (!this._listData || !this._listData.length) {
+      wrap.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无数据</div>';
+      return;
+    }
+
+    let data = [...this._listData];
+    if (this._datasetFilter) {
+      data = data.filter(exp => (exp.split_name || '') === this._datasetFilter);
+    }
+    data.sort((a, b) => {
+      let aVal = a[this._sortField] || 0;
+      let bVal = b[this._sortField] || 0;
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+      if (aVal < bVal) return this._sortDir === 'asc' ? -1 : 1;
+      if (aVal > bVal) return this._sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    const arrow = (field) => {
+      if (this._sortField !== field) return '↕';
+      return this._sortDir === 'asc' ? '↑' : '↓';
+    };
+
+    let html = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <span style="font-size:12px;color:#888;">数据集:</span>
+      <select onchange="ServerBacktest.setDatasetFilter(this.value)" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:4px 8px;border-radius:4px;font-size:12px;width:120px;">
+        <option value="">全部</option>
+        ${[...new Set(this._listData.map(e => e.split_name || ''))].filter(Boolean).sort().map(s => `<option value="${s}" ${this._datasetFilter === s ? 'selected' : ''}>${s}</option>`).join('')}
+      </select>
+      <span style="font-size:11px;color:#666;">(点击表头排序)</span>
+    </div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;color:#bbb;">';
+    html += `<thead style="position:sticky;top:0;z-index:1;background:#2A2A2E;"><tr style="background:#2A2A2E;">
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="ServerBacktest.setSort('created_at')">时间 ${arrow('created_at')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="ServerBacktest.setSort('experiment_name')">实验名 ${arrow('experiment_name')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="ServerBacktest.setSort('strategy_version')">版本 ${arrow('strategy_version')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="ServerBacktest.setSort('split_name')">数据集 ${arrow('split_name')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="ServerBacktest.setSort('total_return_pct')">收益率 ${arrow('total_return_pct')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="ServerBacktest.setSort('max_drawdown_pct')">最大回撤 ${arrow('max_drawdown_pct')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="ServerBacktest.setSort('trades')">交易次数 ${arrow('trades')}</th>
+      <th style="padding:6px 8px;text-align:center;cursor:pointer;user-select:none;" onclick="ServerBacktest.setSort('sharpe')">夏普 ${arrow('sharpe')}</th>
+      <th style="padding:6px 8px;text-align:center;">详情</th>
+    </tr></thead><tbody>`;
+    data.slice(0, 50).forEach(exp => {
+      const ret = exp.total_return_pct || 0;
+      const dd = exp.max_drawdown_pct || 0;
+      const sharpe = exp.sharpe || 0;
+      const trades = exp.trades || 0;
+      const created = exp.created_at ? exp.created_at.slice(5, 19).replace('T', ' ') : '-';
+      const cls = ret >= 0 ? '#4CAF82' : '#E05C5C';
+      html += `<tr style="cursor:pointer;background:var(--gray-2);" onmouseover="this.style.background='var(--gray-3)'" onmouseout="this.style.background='var(--gray-2)'" onclick="ServerBacktest.showDetail(${exp.id})">`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${created}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${exp.experiment_name || exp.id}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${exp.strategy_version || '-'}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${exp.split_name || '-'}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:${cls};font-weight:700;">${ret.toFixed(1)}%</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#ff7777;font-weight:600;">${dd.toFixed(1)}%</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${trades.toLocaleString()}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;color:#000;">${sharpe.toFixed(2)}</td>`;
+      html += `<td style="padding:6px 8px;border-bottom:1px solid #353538;text-align:center;"><button onclick="event.stopPropagation();ServerBacktest.showParams(${exp.id})" style="background:var(--sky);border:none;border-radius:4px;padding:4px 10px;color:#111;cursor:pointer;font-size:11px;">详情</button></td>`;
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  },
+
+  setSort(field) {
+    if (this._sortField === field) {
+      this._sortDir = this._sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this._sortField = field;
+      this._sortDir = 'desc';
+    }
+    this.renderList();
+  },
+
+  setDatasetFilter(val) {
+    this._datasetFilter = val;
+    this.renderList();
+  },
+
+  async showParams(id) {
+    const modal = document.getElementById('btParamsModal');
+    const title = document.getElementById('btParamsTitle');
+    const body = document.getElementById('btParamsBody');
+    modal.style.display = 'flex';
+    title.textContent = '加载中...';
+    body.innerHTML = '';
+    try {
+      const resp = await fetch(`/api/server_backtest/detail/${id}`);
+      const d = await resp.json();
+      if (d.error) throw new Error(d.error);
+      const version = d.strategy_version || '-';
+      const name = d.experiment_name || '-';
+      title.textContent = `${name} (${version}) 参数详情`;
+      let html = '';
+      if (d.params_json) {
+        try {
+          const params = JSON.parse(d.params_json);
+          html += '<table style="width:100%;border-collapse:collapse;">';
+          for (const [k, v] of Object.entries(params)) {
+            const val = Array.isArray(v) ? v.join(', ') : String(v);
+            html += `<tr><td style="padding:4px 8px;color:#999;white-space:nowrap;vertical-align:top;">${k}</td><td style="padding:4px 8px;color:#fff;">${val}</td></tr>`;
+          }
+          html += '</table>';
+        } catch {
+          html += `<div style="color:#888;">${d.params_json}</div>`;
+        }
+      } else {
+        html = '<div style="color:#888;">无参数信息</div>';
+      }
+      if (d.notes) {
+        html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid #353538;"><div style="color:#999;margin-bottom:4px;">备注</div><div style="color:#fff;">${d.notes}</div></div>`;
+      }
+      body.innerHTML = html;
+    } catch (e) {
+      body.innerHTML = `<div style="color:#E05C5C;">加载失败: ${e.message}</div>`;
+    }
+  },
+
   async showDetail(id) {
-    document.getElementById('sbtDetailEmpty').style.display = 'none';
-    document.getElementById('sbtDetailContent').style.display = 'block';
-    document.getElementById('sbtDetailContent').innerHTML = '<div style="padding:40px;text-align:center;color:#888;">加载中...</div>';
+    const sbtDetailEmpty = document.getElementById('sbtDetailEmpty');
+    const sbtDetailContent = document.getElementById('sbtDetailContent');
+    if (!sbtDetailEmpty || !sbtDetailContent) return;
+    sbtDetailEmpty.style.display = 'none';
+    sbtDetailContent.style.display = 'block';
+    sbtDetailContent.innerHTML = '<div style="padding:40px;text-align:center;color:#888;">加载中...</div>';
     try {
       const [detailResp, equityResp] = await Promise.all([
         fetch(`/api/server_backtest/detail/${id}`),
@@ -2060,12 +2166,31 @@ const ServerBacktest = {
       const version = d.strategy_version || '-';
       const initCap = equityData.length > 0 ? equityData[0].equity : 0;
       const finalCap = equityData.length > 0 ? equityData[equityData.length - 1].equity : 0;
+      const trades = d.trades || 0;
+      const winRate = d.win_rate_pct || 0;
+      const sharpe = d.sharpe || 0;
+      const dd = d.max_drawdown_pct || 0;
+      const volume = d.trade_volume_usd || d.成交量USD || 0;
+      const profitPerVol = d.profit_per_volume || d.成交额比率 || 0;
 
-      const html = `
-        <div style="margin-bottom:14px;padding:10px 12px;background:#F7F8FA;border-radius:8px;font-size:13px;color:#555;">
-          <strong style="color:#333;">回测时间</strong>：${bt}
+      sbtDetailContent.innerHTML = `
+        <div id="sbtStatCards2" style="display:none; margin-bottom:12px;"></div>
+        <div class="chart-container" id="sbtEquityChartContainer2" style="display:none; margin-bottom:12px;">
+          <div class="chart-header">
+            <div class="chart-title">组合净值曲线</div>
+            <div class="chart-meta" id="sbtEquityChartMeta2"></div>
+          </div>
+          <div style="height:200px; overflow:hidden;">
+            <canvas id="sbtEquityChart2"></canvas>
+          </div>
         </div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <div id="sbtDetailInfo2" style="color:#888;font-size:12px;line-height:1.6;"></div>
+      `;
+
+      const sbtStatCards2 = document.getElementById('sbtStatCards2');
+      const fmtK = v => v.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+      sbtStatCards2.innerHTML = `
+        <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-start;">
           <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
             <div style="color:#888;font-size:11px;">初始资金</div>
             <div style="color:#000;font-size:16px;font-weight:bold;">${initCap.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
@@ -2088,34 +2213,64 @@ const ServerBacktest = {
           </div>
           <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
             <div style="color:#888;font-size:11px;">最大回撤</div>
-            <div style="color:#ff7777;font-size:18px;font-weight:bold;">${(d.max_drawdown_pct || 0).toFixed(1)}%</div>
+            <div style="color:#ff7777;font-size:18px;font-weight:bold;">${dd.toFixed(1)}%</div>
           </div>
           <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
             <div style="color:#888;font-size:11px;">成交量</div>
-            <div style="color:#4CAF82;font-size:18px;font-weight:bold;">${d.trade_volume_usd ? d.trade_volume_usd.toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0}) : '-'}</div>
+            <div style="color:#4CAF82;font-size:18px;font-weight:bold;">${volume ? volume.toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:0}) : '-'}</div>
           </div>
           <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
             <div style="color:#888;font-size:11px;">夏普</div>
-            <div style="color:#888;font-size:18px;font-weight:bold;">${(d.sharpe || 0).toFixed(3)}</div>
+            <div style="color:#888;font-size:18px;font-weight:bold;">${sharpe.toFixed(3)}</div>
           </div>
-        </div>
-        ${equityData.length > 0 ? `
-        <div style="margin-bottom:12px;">
-          <div style="color:#888;font-size:12px;margin-bottom:6px;">组合净值曲线 | ${equityData.length} bars</div>
-          <div style="height:200px;background:#F7F8FA;border-radius:8px;overflow:hidden;">
-            <canvas id="sbtEquityChart"></canvas>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">利润/成交量</div>
+            <div style="color:${profitPerVol>=0?'#4CAF82':'#E05C5C'};font-size:18px;font-weight:bold;">${fmtK(profitPerVol)}</div>
           </div>
-        </div>
-        ` : ''}
-        <div style="color:#888;font-size:12px;line-height:1.6;">
-          <span>交易次数: ${d.trades || 0} | </span>
-          <span>胜率: ${(d.win_rate_pct || 0).toFixed(1)}% | </span>
-          <span>创建: ${(d.created_at || d.创建时间 || '-').slice(0, 19)}</span>
+          <div style="background:var(--gray-2);border:1px solid var(--gray-3);padding:12px 20px;border-radius:6px;text-align:center;min-width:100px;">
+            <div style="color:#888;font-size:11px;">胜率</div>
+            <div style="color:#4CAF82;font-size:18px;font-weight:bold;">${winRate.toFixed(1)}%</div>
+          </div>
         </div>
       `;
-      document.getElementById('sbtDetailContent').innerHTML = html;
+      sbtStatCards2.style.display = 'block';
+
+      const eqData = equityData;
+      const sbtEquityChartContainer2 = document.getElementById('sbtEquityChartContainer2');
+      const sbtEquityChartMeta2 = document.getElementById('sbtEquityChartMeta2');
+      if (eqData.length > 0) {
+        const labels = eqData.map(r => r.timestamp);
+        const equity = eqData.map(r => r.equity);
+        const drawdown = eqData.map(r => r.drawdown);
+        sbtEquityChartContainer2.style.display = 'block';
+        sbtEquityChartMeta2.textContent = `${eqData.length} bars | ${version} | ${d.split_name || '-'}`;
+
+        if (window.sbtEquityChartInstance) {
+          window.sbtEquityChartInstance.destroy();
+        }
+        const ctx = document.getElementById('sbtEquityChart2').getContext('2d');
+        window.sbtEquityChartInstance = new Chart(ctx, {
+          type: 'line',
+          data: { labels, datasets: [
+            { label: '净值', data: equity, borderColor: '#4FA8D7', backgroundColor: 'rgba(79,168,215,0.1)', borderWidth: 2, tension: 0.1, fill: true, pointRadius: 0, yAxisID: 'y' },
+            { label: '回撤', data: drawdown, borderColor: '#E05C5C', backgroundColor: 'rgba(224,92,92,0.1)', borderWidth: 1, tension: 0.1, fill: true, pointRadius: 0, yAxisID: 'y1' }
+          ]},
+          options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { color: '#888', font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}` } } }, scales: { x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: '#2A2A2E' } }, y: { type: 'linear', position: 'left', ticks: { color: '#4FA8D7', callback: v => v.toFixed(0) }, grid: { color: '#2A2A2E' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#E05C5C', callback: v => v.toFixed(1) }, grid: { drawOnChartArea: false } } } }
+        });
+      }
+
+      const sbtDetailInfo2 = document.getElementById('sbtDetailInfo2');
+      sbtDetailInfo2.innerHTML = `
+        <span style="color:#666;">回测时间: ${bt} | </span>
+        <span style="color:#666;">交易次数: ${trades.toLocaleString()} | </span>
+        <span style="color:#666;">胜率: ${winRate.toFixed(1)}% | </span>
+        <span style="color:#666;">创建: ${(d.created_at || d.创建时间 || '-').slice(0, 19)}</span>
+      `;
     } catch (e) {
-      document.getElementById('sbtDetailContent').innerHTML = `<div style="color:#E05C5C;padding:40px;">加载失败: ${e.message}</div>`;
+      console.error('ServerBacktest.showDetail error:', e);
+      if (sbtDetailContent) {
+        sbtDetailContent.innerHTML = `<div style="color:#E05C5C;padding:40px;">加载失败: ${e.message}</div>`;
+      }
     }
   },
 
