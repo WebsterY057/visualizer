@@ -575,6 +575,15 @@ def api_sql_query():
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
 
+        # Auto-attach all other query databases for cross-db queries
+        attached = {}
+        for k, v in QUERY_DATABASES.items():
+            if k == db_key:
+                continue
+            alias = k.replace('-', '_')
+            cur.execute(f"ATTACH DATABASE '{v['path']}' AS {alias}")
+            attached[alias] = v['name']
+
         if re.match(r'^\s*PRAGMA\s+', sql, re.I):
             cur.execute(sql)
             rows = cur.fetchall()

@@ -410,7 +410,7 @@
 <!-- ========== 数据查询面板 ========== -->
 <div id="queryPanel" style="display:none; width:100%; padding: 20px;">
   <div style="display:grid; grid-template-columns: 360px 1fr; gap: 14px;">
-    <div>
+    <div style="min-width:0;">
       <div class="panel-section">
         <div class="panel-title">SQL查询</div>
         <div class="ctrl-group">
@@ -446,7 +446,7 @@
         </div>
       </div>
     </div>
-    <div>
+    <div style="min-width:0;">
       <div class="panel-section">
         <div class="panel-title">查询结果</div>
         <div id="qTableWrap" style="max-height:500px;overflow:auto;"></div>
@@ -2464,7 +2464,7 @@ const Query = {
         return;
       }
       const cols = Object.keys(data[0]);
-      let html = '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#bbb;">';
+      let html = '<table style="border-collapse:collapse;font-size:11px;color:#bbb;white-space:nowrap;">';
       html += '<thead><tr>' + cols.map(c => `<th style="background:#353538;padding:8px;text-align:left;position:sticky;top:0;">${c}</th>`).join('') + '</tr></thead><tbody>';
       data.slice(0, 100).forEach(row => {
         html += '<tr>' + cols.map(c => `<td style="padding:6px;border-bottom:1px solid #404044;">${row[c] ?? ''}</td>`).join('') + '</tr>';
