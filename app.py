@@ -14,7 +14,7 @@ import re
 import urllib.request
 import urllib.error
 import importlib.util
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template, jsonify, make_response
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -494,7 +494,11 @@ def round_numeric_fields(data, decimals=4):
 def index():
     """主页 - 数据选择界面"""
     meta = get_tables_meta()
-    return render_template('index.html', meta=meta)
+    response = make_response(render_template('index.html', meta=meta))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 @app.route('/backtest')
@@ -763,6 +767,42 @@ def _minimax_chat_to_text(user_content, system_content):
     return text
 
 
+def _replace_select_star(sql, question, schema):
+    """如果 SQL 包含 SELECT *，尝试从问题中提取字段名并替换。"""
+    if not re.search(r'SELECT\s+\*', sql, re.I):
+        return sql
+    # 从 schema 中提取所有列名
+    col_map = {}  # 中文名 -> 带引号的列名
+    for line in schema.split('\n'):
+        m = re.match(r'Table\s+"([^"]+)":\s*(.+)', line)
+        if not m:
+            continue
+        table, cols_str = m.group(1), m.group(2)
+        for col_m in re.finditer(r'"([^"]+)":(\w+)', cols_str):
+            cn, ct = col_m.group(1), col_m.group(2)
+            col_map[cn] = f'"{cn}"'
+            col_map[cn.lower()] = f'"{cn}"'
+
+    # 从问题中提取可能的列名
+    # 中文常见指标词
+    keywords = [
+        '捆绑费', 'gas费', 'gas', 'alpha', '利润', '盈亏', '交易量', '订单量',
+        'bnb', 'Wbnb', '理论利润', 'alpha利润', 'alpha利润率', '回撤',
+        '捆绑占比', '当日最终余额', '最大回撤', '夏普', '胜率', '成交量',
+        '捆绑费_跨', '捆绑费_龟', 'alpha利润_跨', 'alpha利润_龟',
+    ]
+    found = set()
+    for kw in keywords:
+        if kw in question:
+            for cn, quoted in col_map.items():
+                if kw in cn or cn in kw:
+                    found.add(quoted)
+    if found:
+        new_cols = ', '.join(sorted(found))
+        sql = re.sub(r'SELECT\s+\*', f'SELECT {new_cols}', sql, flags=re.I)
+    return sql
+
+
 @app.route('/api/query/nl_to_sql', methods=['POST'])
 def api_query_nl_to_sql():
     """
@@ -790,9 +830,10 @@ def api_query_nl_to_sql():
 
     sys_prompt = (
         '你是 SQLite 只读查询助手。用户库为中文表名/列名很常见，表名含非 ASCII 时必须用双引号包裹，'
-        '如 SELECT * FROM "跨所汇总" LIMIT 20。'
+        '如 SELECT "日期", "捆绑费_跨1", "捆绑费_跨2" FROM "跨所汇总" LIMIT 20。'
         '只输出一条可执行语句：允许 WITH…SELECT、SELECT、或 PRAGMA table_info("表名")；'
         '禁止 INSERT/UPDATE/DELETE/DROP/ALTER/ATTACH 及多条语句。'
+        '重要：禁止使用 SELECT *，必须只选择用户提到的列（别名 AS 可选），避免返回过多列。'
         '默认加 LIMIT 200 防止大表拖垮。不要 Markdown，不要解释。'
     )
     user_blob = (
@@ -810,6 +851,10 @@ def api_query_nl_to_sql():
     sql, err = _sanitize_nl_generated_sql(raw)
     if err:
         return jsonify({'success': False, 'error': err, 'raw': raw[:4000]}), 400
+
+    # Post-process: if SELECT *, try to extract fields from question and replace
+    sql = _replace_select_star(sql, question, schema)
+
     return jsonify({'success': True, 'sql': sql, 'raw_preview': raw[:500]})
 
 
@@ -2021,84 +2066,87 @@ def api_backtest_trade_analysis(exp_id):
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
-        # Get bar data with VWAP and indicators
-        cur.execute("""
-            SELECT bar_index, timestamp, open, high, low, close, volume, quote_volume, trades as n_trades, signal
-            FROM bar_data WHERE exp_id = ? ORDER BY timestamp
-        """, (exp_id,))
-        bar_rows = [dict(r) for r in cur.fetchall()]
-
-        # Compute VWAP and indicators per bar
-        bars_with_indicators = []
-        cum_pv = 0.0
-        cum_vol = 0.0
-        for i, bar in enumerate(bar_rows):
-            price = (bar['high'] + bar['low'] + bar['close']) / 3
-            vol = bar['volume'] or 0
-            cum_pv += price * vol
-            cum_vol += vol
-            vwap = cum_pv / cum_vol if cum_vol > 0 else price
-
-            price_change = ((bar['close'] - bar_rows[i-1]['close']) / bar_rows[i-1]['close'] * 100) if i > 0 and bar_rows[i-1]['close'] else 0
-            hl_range = (bar['high'] - bar['low']) / bar['low'] * 100 if bar['low'] else 0
-            bar_close = price
-
-            bars_with_indicators.append({
-                'ts': bar['timestamp'],
-                'close': bar['close'],
-                'volume': vol,
-                'quote_volume': bar['quote_volume'] or 0,
-                'n_trades': bar['n_trades'] or 0,
-                'price_change_pct': round(price_change, 4),
-                'hl_range_pct': round(hl_range, 4),
-                'vwap': round(vwap, 8),
-                'signal': bar['signal'],
-            })
-
-        # Get trade markers
+        # Get trade markers with per-token ordering for indicators
         cur.execute("""
             SELECT id, timestamp, token, signal_type, price, quantity, notional_usd, side, exit_reason
-            FROM trade_markers WHERE exp_id = ? ORDER BY timestamp
+            FROM trade_markers WHERE exp_id = ? ORDER BY token, timestamp, id
         """, (exp_id,))
         trades = [dict(r) for r in cur.fetchall()]
         conn.close()
 
-        # Match each trade to its closest bar and compute indicators
+        # Compute profit per trade using FIFO matching per token
+        fifo_queue = {}
+        trade_profit = {}
+        last_trade_price = {}
+
+        for t in trades:
+            tok = t['token']
+            qty = t['quantity'] or 0
+            price = t['price'] or 0
+
+            if t['signal_type'] == 'buy':
+                if tok not in fifo_queue:
+                    fifo_queue[tok] = []
+                fifo_queue[tok].append({'qty': qty, 'price': price, 'id': t['id']})
+                last_trade_price[tok] = price
+                trade_profit[t['id']] = 0
+            elif t['signal_type'] == 'sell' and tok in fifo_queue and len(fifo_queue[tok]) > 0:
+                remaining = qty
+                pnl = 0.0
+                while remaining > 0 and fifo_queue[tok]:
+                    buy = fifo_queue[tok][0]
+                    match_qty = min(remaining, buy['qty'])
+                    pnl += match_qty * (price - buy['price'])
+                    remaining -= match_qty
+                    buy['qty'] -= match_qty
+                    if buy['qty'] <= 0:
+                        fifo_queue[tok].pop(0)
+                trade_profit[t['id']] = round(pnl, 4)
+                last_trade_price[tok] = price
+            else:
+                trade_profit[t['id']] = 0
+
+        # Compute order-level indicators per token
+        token_trades = {}  # token -> list of {price, qty}
         trade_data = []
         for t in trades:
-            ts = t['timestamp']
-            # Find the bar closest to this trade timestamp
-            best_bar = None
-            for b in bars_with_indicators:
-                if b['ts'] <= ts:
-                    best_bar = b
-                else:
-                    break
+            tok = t['token']
+            price = t['price'] or 0
+            qty = t['quantity'] or 0
+            notional = t['notional_usd'] or 0
 
-            if best_bar:
-                avg_notional = best_bar['quote_volume'] / best_bar['n_trades'] if best_bar['n_trades'] > 0 else 0
-                trade_data.append({
-                    'id': t['id'],
-                    'timestamp': ts,
-                    'token': t['token'],
-                    'signal_type': t['signal_type'],
-                    'price': t['price'],
-                    'notional_usd': t['notional_usd'],
-                    'side': t['side'],
-                    'bar_close': best_bar['close'],
-                    'volume': best_bar['volume'],
-                    'quote_volume': best_bar['quote_volume'],
-                    'n_trades': best_bar['n_trades'],
-                    'price_change_pct': best_bar['price_change_pct'],
-                    'hl_range_pct': best_bar['hl_range_pct'],
-                    'vwap': best_bar['vwap'],
-                    'avg_trade_notional': round(avg_notional, 4),
-                    'price_vs_vwap': round((t['price'] - best_bar['vwap']) / best_bar['vwap'] * 100, 4) if best_bar['vwap'] else 0,
-                })
+            if tok not in token_trades:
+                token_trades[tok] = []
+            token_trades[tok].append({'price': price, 'qty': qty})
+
+            # Compute rolling VWAP fast(10 trades) / slow(50 trades) per token
+            recent = token_trades[tok]
+            fast_window = recent[-10:]
+            slow_window = recent[-50:]
+
+            def weighted_avg(trades):
+                total_pv = sum(x['price'] * x['qty'] for x in trades)
+                total_q = sum(x['qty'] for x in trades)
+                return total_pv / total_q if total_q > 0 else 0
+
+            vwap_fast = weighted_avg(fast_window)
+            vwap_slow = weighted_avg(slow_window)
+            vwap_diff_pct = (vwap_fast - vwap_slow) / vwap_slow * 100 if vwap_slow > 0 else 0
+
+            trade_data.append({
+                'id': t['id'],
+                'timestamp': t['timestamp'],
+                'token': tok,
+                'signal_type': t['signal_type'],
+                'price': price,
+                'qty': qty,
+                'notional': notional,
+                'profit': trade_profit.get(t['id'], 0),
+                'vwap_diff_pct': round(vwap_diff_pct, 4),
+            })
 
         return jsonify({'data': trade_data, 'indicators': [
-            'price_change_pct', 'hl_range_pct', 'volume', 'quote_volume',
-            'n_trades', 'vwap', 'avg_trade_notional', 'price_vs_vwap', 'notional_usd'
+            'price', 'qty', 'notional', 'profit', 'vwap_diff_pct'
         ]})
     except Exception as e:
         logger.error(f"trade_analysis查询失败: {e}")

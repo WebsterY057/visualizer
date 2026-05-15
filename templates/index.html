@@ -202,21 +202,6 @@
 
     <hr class="divider">
 
-    <!-- 5. 图表类型 -->
-    <div class="panel-section">
-      <div class="panel-title">5. 图表类型</div>
-      <div class="chart-types">
-        <div class="chart-type-btn active" onclick="setChartType('line', this)">折线图</div>
-        <div class="chart-type-btn" onclick="setChartType('bar', this)">柱状图</div>
-        <div class="chart-type-btn" onclick="setChartType('pie', this)">饼图</div>
-        <div class="chart-type-btn" onclick="setChartType('heatmap', this)">热力图</div>
-        <div class="chart-type-btn" onclick="setChartType('scatter', this)">散点图</div>
-        <div class="chart-type-btn" onclick="setChartType('radar', this)">雷达图</div>
-      </div>
-    </div>
-
-    <hr class="divider">
-
     <!-- 6. 查询按钮 -->
     <div class="panel-section">
       <button class="btn" onclick="renderChart()" style="width:100%;margin-bottom:8px;">生成图表</button>
@@ -229,6 +214,11 @@
   <!-- ========== 右侧内容区 ========== -->
   <div class="content">
     <div class="stat-cards" id="statCards" style="display:none;"></div>
+
+    <!-- 刷新默认图表按钮 -->
+    <div style="text-align:right; margin-bottom:8px;">
+      <button onclick="resetDefaultChart()" style="padding:4px 10px;font-size:11px;background:var(--gray-2);border:1px solid var(--gray-3);border-radius:4px;cursor:pointer;color:var(--gray-5);">↺ 刷新默认图表</button>
+    </div>
 
     <!-- ========== K12 vs 龟12 盈亏对比 ========== -->
     <div class="chart-container" id="pnlCompareContainer" style="margin-bottom:16px;">
@@ -261,6 +251,17 @@
       </div>
     </div>
 
+    <!-- 图表区域 -->
+    <div class="chart-container" id="chartContainer" style="display:none;">
+      <div class="chart-header">
+        <div class="chart-title" id="chartTitle">图表</div>
+        <div class="chart-meta" id="chartMeta"></div>
+      </div>
+      <div style="height:300px; overflow:hidden;">
+        <canvas id="mainChart"></canvas>
+      </div>
+    </div>
+
     <!-- 数据表格 -->
     <div class="chart-container" id="tableContainer" style="display:none;">
       <div class="chart-header">
@@ -275,17 +276,6 @@
           <thead id="tableHead"></thead>
           <tbody id="tableBody"></tbody>
         </table>
-      </div>
-    </div>
-
-    <!-- 图表区域 -->
-    <div class="chart-container" id="chartContainer" style="display:none;">
-      <div class="chart-header">
-        <div class="chart-title" id="chartTitle">图表</div>
-        <div class="chart-meta" id="chartMeta"></div>
-      </div>
-      <div style="height:300px; overflow:hidden;">
-        <canvas id="mainChart"></canvas>
       </div>
     </div>
 
@@ -357,29 +347,23 @@
       </div>
       <div>
         <div style="color:#888;font-size:11px;margin-bottom:4px;">X轴</div>
-        <select id="optXAxis" onchange="Optimization.renderChart()" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:6px 10px;border-radius:4px;font-size:12px;">
-          <option value="price_change_pct">价格变化%</option>
-          <option value="hl_range_pct">高低波幅%</option>
-          <option value="volume">成交量</option>
-          <option value="quote_volume">成交额USDT</option>
-          <option value="n_trades">笔数</option>
-          <option value="avg_trade_notional">单笔均额</option>
-          <option value="price_vs_vwap">偏离VWAP%</option>
-          <option value="notional_usd">交易额</option>
-        </select>
+          <select id="optXAxis" onchange="Optimization.renderChart()" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:6px 10px;border-radius:4px;font-size:12px;">
+            <option value="price">成交价</option>
+            <option value="qty">成交量(token)</option>
+            <option value="notional">成交额USDT</option>
+            <option value="profit">盈亏USDT</option>
+            <option value="vwap_diff_pct">快慢VWAP差%</option>
+          </select>
       </div>
       <div>
         <div style="color:#888;font-size:11px;margin-bottom:4px;">Y轴</div>
-        <select id="optYAxis" onchange="Optimization.renderChart()" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:6px 10px;border-radius:4px;font-size:12px;">
-          <option value="price_change_pct">价格变化%</option>
-          <option value="hl_range_pct" selected>高低波幅%</option>
-          <option value="volume">成交量</option>
-          <option value="quote_volume">成交额USDT</option>
-          <option value="n_trades">笔数</option>
-          <option value="avg_trade_notional">单笔均额</option>
-          <option value="price_vs_vwap">偏离VWAP%</option>
-          <option value="notional_usd">交易额</option>
-        </select>
+          <select id="optYAxis" onchange="Optimization.renderChart()" style="background:var(--gray-2);border:1px solid var(--gray-3);color:var(--gray-5);padding:6px 10px;border-radius:4px;font-size:12px;">
+            <option value="price">成交价</option>
+            <option value="qty">成交量(token)</option>
+            <option value="notional">成交额USDT</option>
+            <option value="profit" selected>盈亏USDT</option>
+            <option value="vwap_diff_pct">快慢VWAP差%</option>
+          </select>
       </div>
       <div style="display:flex;gap:8px;align-items:center;padding-bottom:2px;">
         <label style="color:#888;font-size:12px;display:flex;align-items:center;gap:3px;">
@@ -469,6 +453,13 @@ let currentDb = '';
 let activeFilters = {};
 let tableColumns = [];
 let yFieldsOptions = [];
+
+// 全局 Chart.js 字体设置（解决图表字体异常）
+// 注意：Chart.js CDN 脚本在上方 <script src="...">，此处一定在 CDN 加载后执行
+if (typeof Chart !== 'undefined' && Chart.defaults && Chart.defaults.global) {
+  Chart.defaults.global.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  Chart.defaults.global.font.size = 12;
+}
 let selectedTables = [];
 let selectedFields = [];
 
@@ -488,25 +479,31 @@ function populateQueryDbSelect() {
 // 初始化
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
-  const resp = await fetch('/api/databases');
-  dbList = await resp.json();
+  try {
+    const resp = await fetch('/api/databases');
+    dbList = await resp.json();
+  } catch(e) { console.error('databases fetch error:', e); }
 
-  const respQuery = await fetch('/api/databases?scope=query');
-  queryDbList = await respQuery.json();
+  try {
+    const respQuery = await fetch('/api/databases?scope=query');
+    queryDbList = await respQuery.json();
+  } catch(e) { console.error('query databases fetch error:', e); }
 
-  const dbSel = document.getElementById('dbSelect');
-  Object.entries(dbList).forEach(([key, info]) => {
-    const opt = document.createElement('option');
-    opt.value = key;
-    opt.textContent = info.name;
-    dbSel.appendChild(opt);
-  });
+  try {
+    const dbSel = document.getElementById('dbSelect');
+    Object.entries(dbList || {}).forEach(([key, info]) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = info.name;
+      dbSel.appendChild(opt);
+    });
+  } catch(e) { console.error('dbSelect populate error:', e); }
 
-  populateQueryDbSelect();
+  try { populateQueryDbSelect(); } catch(e) { console.error('populateQueryDbSelect error:', e); }
+  try { initQuerySqlTemplateSelect(); } catch(e) { console.error('initQuerySqlTemplateSelect error:', e); }
 
-  initQuerySqlTemplateSelect();
-
-  loadPnlCompare();
+  // 确保默认图表一定加载
+  try { await loadPnlCompare(); } catch(e) { console.error('loadPnlCompare error:', e); }
 });
 
 async function onDbChange() {
@@ -634,7 +631,6 @@ async function onTableChange() {
   if (dateInfo[1]) document.getElementById('dateTo').value = dateInfo[1];
 
   onYFieldChange();
-  renderChart();
 }
 
 function renderSelectedTables() {
@@ -785,6 +781,7 @@ async function renderChart() {
   document.getElementById('errorBox').innerHTML = '';
   document.getElementById('noData').style.display = 'none';
   document.getElementById('chartContainer').style.display = 'none';
+  document.getElementById('pnlCompareContainer').style.display = 'none';
 
   if (!table) { showError('请先选择数据表'); return; }
   if (yFields.length === 0) { showError('请至少选择一个字段'); return; }
@@ -922,6 +919,13 @@ function renderCurrentChart() {
 }
 
 let pnlCompareChart = null;
+
+function resetDefaultChart() {
+  document.getElementById('chartContainer').style.display = 'none';
+  document.getElementById('tableContainer').style.display = 'none';
+  document.getElementById('pnlCompareContainer').style.display = 'block';
+  loadPnlCompare();
+}
 
 async function loadPnlCompare() {
   const container = document.getElementById('pnlCompareContainer');
@@ -2205,14 +2209,9 @@ const Optimization = {
     }
 
     const fieldNames = {
-      price_change_pct: '价格变化%',
-      hl_range_pct: '高低波幅%',
-      volume: '成交量',
-      quote_volume: '成交额USDT',
-      n_trades: '笔数',
-      avg_trade_notional: '单笔均额',
-      price_vs_vwap: '偏离VWAP%',
-      notional_usd: '交易额',
+      price: '成交价',
+      profit: '盈亏USDT',
+      vwap_diff_pct: '快慢VWAP差%',
     };
 
     if (!points.length) {
@@ -2247,7 +2246,7 @@ const Optimization = {
       const xi = Math.min(GRID-1, Math.max(0, Math.floor((p[xField] - loX) / rangeX * GRID)));
       const yi = Math.min(GRID-1, Math.max(0, Math.floor((p[yField] - loY) / rangeY * GRID)));
       density[xi][yi]++;
-      profitSum[xi][yi] += p.notional_usd || 0;
+      profitSum[xi][yi] += p.profit || 0;
     });
 
     const maxDensity = Math.max(...density.flat(), 1);
@@ -2331,8 +2330,8 @@ const Optimization = {
     ctx.restore();
 
     // Stats
-    const wins = points.filter(t => (t.notional_usd || 0) > 0).length;
-    const losses = points.filter(t => (t.notional_usd || 0) <= 0).length;
+    const wins = points.filter(t => (t.profit || 0) > 0).length;
+    const losses = points.filter(t => (t.profit || 0) <= 0).length;
     document.getElementById('optStats').textContent =
       `共 ${points.length} 笔 | 盈利 ${wins} (${(wins/points.length*100).toFixed(1)}%) | 亏损 ${losses} (${(losses/points.length*100).toFixed(1)}%)`;
   }
